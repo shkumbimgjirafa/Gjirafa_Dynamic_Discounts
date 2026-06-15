@@ -145,7 +145,7 @@ public class BulkWriteService : IBulkWriteService
         t.Columns.Add("PricingRunId", typeof(long));
         t.Columns.Add("Sku", typeof(string));
         t.Columns.Add("PriceBandId", typeof(int)).AllowDBNull = true;
-        AddNullableDecimals(t, "RawWeightedPrice");
+        AddNullableDecimals(t, "RawWeightedPrice", "Pptcv");
         t.Columns.Add("OldPrice", typeof(decimal));
         t.Columns.Add("CurrentPrice", typeof(decimal));
         t.Columns.Add("ProposedPriceValue", typeof(decimal));
@@ -163,7 +163,7 @@ public class BulkWriteService : IBulkWriteService
         {
             t.Rows.Add(
                 p.Id, p.PricingRunId, p.Sku, Box(p.PriceBandId),
-                Box(Round(p.RawWeightedPrice, 4)),
+                Box(Round(p.RawWeightedPrice, 4)), Box(Round(p.Pptcv, 4)),
                 Round(p.OldPrice, 2), Round(p.CurrentPrice, 2), Round(p.ProposedPriceValue, 2),
                 Round(p.ChangePct, 4), p.HasChange,
                 p.ReasonCodes, p.GuardrailFlags, (int)p.Status,

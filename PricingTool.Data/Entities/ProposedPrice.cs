@@ -27,6 +27,9 @@ public class ProposedPrice
     public decimal OldPrice { get; set; }
     public decimal CurrentPrice { get; set; }
 
+    /// <summary>PPTCV (cost) at run time — the value the price band was selected on. Null when unknown.</summary>
+    public decimal? Pptcv { get; set; }
+
     /// <summary>Weighted-average of votes before guardrails/rounding; null when no algorithm voted.</summary>
     public decimal? RawWeightedPrice { get; set; }
 

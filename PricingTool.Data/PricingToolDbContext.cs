@@ -69,6 +69,7 @@ public class PricingToolDbContext : DbContext
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.OldPrice).HasPrecision(18, 2);
             e.Property(x => x.CurrentPrice).HasPrecision(18, 2);
+            e.Property(x => x.Pptcv).HasPrecision(18, 4);
             e.Property(x => x.RawWeightedPrice).HasPrecision(18, 4);
             e.Property(x => x.ProposedPriceValue).HasPrecision(18, 2);
             e.Property(x => x.ChangePct).HasPrecision(9, 4);

@@ -112,6 +112,7 @@
             <tr>
                 @if (isManager) { <th><input type="checkbox" id="checkAll" /></th> }
                 <th>SKU</th><th>Band</th>
+                <th class="text-end">Cost €</th>
                 <th class="text-end">Old €</th><th class="text-end">Current €</th><th class="text-end">Proposed €</th>
                 <th class="text-end">Δ%</th>
                 <th>Reasons</th><th>Guardrails</th><th>Status</th>
@@ -134,6 +135,7 @@
                 }
                 <td><a asp-controller="Sku" asp-action="Details" asp-route-id="@p.Sku">@p.Sku</a></td>
                 <td><small>@bandName</small></td>
+                <td class="text-end">@(p.Pptcv.HasValue ? p.Pptcv.Value.ToString("0.00") : "–")</td>
                 <td class="text-end">@p.OldPrice.ToString("0.00")</td>
                 <td class="text-end">@p.CurrentPrice.ToString("0.00")</td>
                 <td class="text-end fw-bold">@p.ProposedPriceValue.ToString("0.00")</td>
@@ -163,7 +165,7 @@
         }
         @if (!Model.Proposals.Any())
         {
-            <tr><td colspan="10" class="text-muted">Nothing matches the current filter.</td></tr>
+            <tr><td colspan="11" class="text-muted">Nothing matches the current filter.</td></tr>
         }
         </tbody>
     </table>
