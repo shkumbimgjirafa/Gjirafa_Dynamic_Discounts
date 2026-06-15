@@ -88,6 +88,17 @@ public class OutcomeEvaluationService
             .ToListAsync(ct);
         var byProposal = existing.ToDictionary(o => o.ProposedPriceId!.Value);
 
+        // Batch-load every pushed SKU's snapshot history once, ordered by date, and do the per-proposal
+        // pre/post lookups in memory. (Previously this issued two queries PER pushed proposal — an N+1
+        // that becomes tens of thousands of round-trips once managers push at full-catalog scale.)
+        var pushedSkus = pushedRaw.Select(p => p.Sku).Distinct().ToList();
+        var historyBySku = (await _db.DailySnapshots.AsNoTracking()
+                .Where(s => s.LayerId == run.LayerId && pushedSkus.Contains(s.Sku))
+                .Select(s => new { s.Sku, s.SnapshotDate, s.Qty7, s.Net7, s.Pptcv })
+                .ToListAsync(ct))
+            .GroupBy(s => s.Sku, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.OrderBy(s => s.SnapshotDate).ToList(), StringComparer.OrdinalIgnoreCase);
+
         var finalised = 0;
         foreach (var p in pushedRaw)
         {
@@ -97,13 +108,13 @@ public class OutcomeEvaluationService
             var d0 = p.PushedUtc!.Value.Date;
             var postDate = d0.AddDays(_windowDays);
 
+            historyBySku.TryGetValue(p.Sku, out var history);
+
             // "Pre" = the latest snapshot on/before D0 (the 7 days leading up to the change).
-            var pre = await _db.DailySnapshots.AsNoTracking()
-                .Where(s => s.LayerId == run.LayerId && s.Sku == p.Sku && s.SnapshotDate <= d0)
-                .OrderByDescending(s => s.SnapshotDate)
-                .Select(s => new SnapPoint(s.Qty7, s.Net7, s.Pptcv))
-                .FirstOrDefaultAsync(ct);
-            if (pre is null) continue; // no pre-window history to anchor against
+            // History is ordered ascending by date, so the last match ≤ D0 is the most recent.
+            var preRow = history?.LastOrDefault(s => s.SnapshotDate <= d0);
+            if (preRow is null) continue; // no pre-window history to anchor against
+            var pre = new SnapPoint(preRow.Qty7, preRow.Net7, preRow.Pptcv);
 
             if (outcome is null)
             {
@@ -130,12 +141,9 @@ public class OutcomeEvaluationService
             outcome.PreMarginPct = MarginPct(pre.Qty7, pre.Net7, pre.Pptcv);
 
             // "Post" = the first snapshot on/after D0 + WindowDays. Null ⇒ window not matured yet.
-            var post = await _db.DailySnapshots.AsNoTracking()
-                .Where(s => s.LayerId == run.LayerId && s.Sku == p.Sku && s.SnapshotDate >= postDate)
-                .OrderBy(s => s.SnapshotDate)
-                .Select(s => new SnapPoint(s.Qty7, s.Net7, s.Pptcv))
-                .FirstOrDefaultAsync(ct);
-            if (post is null) continue; // still in flight — leave Pending
+            var postRow = history?.FirstOrDefault(s => s.SnapshotDate >= postDate);
+            if (postRow is null) continue; // still in flight — leave Pending
+            var post = new SnapPoint(postRow.Qty7, postRow.Net7, postRow.Pptcv);
 
             var postCost = post.Pptcv ?? pre.Pptcv; // fall back to the known cost if the later pull lost it
             outcome.PostUnitsPerDay = UnitsPerDay(post.Qty7);
