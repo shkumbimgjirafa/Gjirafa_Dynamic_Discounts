@@ -118,7 +118,7 @@ public class DemoDataGenerator
             CurrentDiscountPct = oldPrice > 0 ? Math.Round((oldPrice - currentPrice) / oldPrice, 4) : 0,
             Pptcv = pptcv,
             GrossMargin = archetype.MissingCost ? null : Math.Round(marginPct, 2),
-            KsWarehouseStock = ksStock,
+            LocalWarehouseStock = ksStock,
             SupplierWarehouseStock = supplierStock,
             Qty7 = q7, Net7 = NetFor(q7), Disc7 = DiscFor(q7),
             Qty14 = q14, Net14 = NetFor(q14), Disc14 = DiscFor(q14),

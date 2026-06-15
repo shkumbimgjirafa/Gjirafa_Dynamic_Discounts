@@ -12,6 +12,10 @@ public enum RunStatus
 public class PricingRun
 {
     public long Id { get; set; }
+
+    /// <summary>The layer this run priced.</summary>
+    public int LayerId { get; set; }
+
     public DateTime StartedUtc { get; set; }
     public DateTime? FinishedUtc { get; set; }
     public RunStatus Status { get; set; }

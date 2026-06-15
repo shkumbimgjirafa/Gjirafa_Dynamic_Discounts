@@ -8,7 +8,10 @@ public class DailySnapshot
 {
     public long Id { get; set; }
 
-    /// <summary>The UTC date this snapshot belongs to (one snapshot set per day; same-day re-pulls replace it).</summary>
+    /// <summary>The layer (Brand + Country) this snapshot belongs to.</summary>
+    public int LayerId { get; set; }
+
+    /// <summary>The UTC date this snapshot belongs to (one snapshot set per layer per day; same-day re-pulls replace it).</summary>
     public DateTime SnapshotDate { get; set; }
 
     public DateTime PulledAtUtc { get; set; }
@@ -19,7 +22,8 @@ public class DailySnapshot
     public decimal? CurrentDiscountPct { get; set; }
     public decimal? Pptcv { get; set; }
     public decimal? GrossMargin { get; set; }
-    public int KsWarehouseStock { get; set; }
+    /// <summary>Stock in the warehouse local to this layer's store (was "KS" when single-layer).</summary>
+    public int LocalWarehouseStock { get; set; }
     public int SupplierWarehouseStock { get; set; }
 
     public int Qty7 { get; set; }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PricingTool.Data;
 using PricingTool.Web.Models;
+using PricingTool.Web.Services;
 
 namespace PricingTool.Web.Controllers;
 
@@ -11,21 +12,27 @@ namespace PricingTool.Web.Controllers;
 public class SkuController : Controller
 {
     private readonly PricingToolDbContext _db;
+    private readonly CurrentLayerService _layers;
 
-    public SkuController(PricingToolDbContext db) => _db = db;
+    public SkuController(PricingToolDbContext db, CurrentLayerService layers)
+    {
+        _db = db;
+        _layers = layers;
+    }
 
     public async Task<IActionResult> Details(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return NotFound();
         var sku = id.Trim();
+        var layerId = await _layers.RequireCurrentIdAsync();
 
         var snapshots = await _db.DailySnapshots.AsNoTracking()
-            .Where(s => s.Sku == sku)
+            .Where(s => s.LayerId == layerId && s.Sku == sku)
             .OrderBy(s => s.SnapshotDate)
             .ToListAsync();
 
         var proposals = await _db.ProposedPrices.AsNoTracking()
-            .Where(p => p.Sku == sku)
+            .Where(p => p.LayerId == layerId && p.Sku == sku)
             .Include(p => p.Votes)
             .Include(p => p.PricingRun)
             .OrderByDescending(p => p.PricingRunId)
@@ -44,7 +51,7 @@ public class SkuController : Controller
                 CurrentPrice = s.CurrentPrice,
                 OldPrice = s.OldPrice,
                 Qty7 = s.Qty7,
-                KsStock = s.KsWarehouseStock,
+                KsStock = s.LocalWarehouseStock,
                 SupplierStock = s.SupplierWarehouseStock,
             }).ToList(),
             Proposals = proposals.Select(p => new SkuProposalHistory

@@ -39,30 +39,36 @@ public class DemoOutcomeSeeder
     /// </summary>
     public async Task EnsureSeededAsync(CancellationToken ct = default)
     {
-        if (await _db.PriceChangeOutcomes.AnyAsync(ct)) return;
-        if (await _db.ProposedPrices.AnyAsync(p => p.Status == ProposalStatus.Pushed, ct)) return;
+        var layers = await _db.Layers.AsNoTracking()
+            .Where(l => l.IsActive).OrderBy(l => l.SortOrder).ToListAsync(ct);
 
-        try
+        foreach (var layer in layers)
         {
-            // A pure snapshot backfill leaves zero proposals — one run creates them (and the
-            // dashboard's "Last run"). Its trailing evaluation grades nothing yet (nothing pushed).
-            var run = await _orchestrator.ExecuteRunAsync("demo-seed", isOnDemand: true, ct);
+            if (await _db.PriceChangeOutcomes.AnyAsync(o => o.LayerId == layer.Id, ct)) continue;
+            if (await _db.ProposedPrices.AnyAsync(p => p.LayerId == layer.Id && p.Status == ProposalStatus.Pushed, ct)) continue;
 
-            var pushed = await ApplyDemoPushesAsync(_db, run.Id, ct);
-            if (pushed > 0)
+            try
             {
-                await _outcomes.EvaluateAsync(run, ct);
-                _logger.LogInformation("Demo mode: pushed {Count} historical proposals and graded their outcomes.", pushed);
+                // A pure snapshot backfill leaves zero proposals — one run creates them (and the
+                // dashboard's "Last run"). Its trailing evaluation grades nothing yet (nothing pushed).
+                var run = await _orchestrator.ExecuteRunAsync("demo-seed", isOnDemand: true, layer.Id, ct);
+
+                var pushed = await ApplyDemoPushesAsync(_db, run.Id, ct);
+                if (pushed > 0)
+                {
+                    await _outcomes.EvaluateAsync(run, ct);
+                    _logger.LogInformation("Demo mode: pushed {Count} historical proposals for layer {Layer} and graded their outcomes.", pushed, layer.DisplayName);
+                }
             }
-        }
-        catch (InvalidOperationException)
-        {
-            // A run is already in progress (e.g. Web + Engine racing on first boot) — retry next boot.
-        }
-        catch (Exception ex)
-        {
-            // Best-effort, illustrative-only seeding must NEVER take down app startup.
-            _logger.LogWarning(ex, "Demo outcome seeding failed; the \"Did the bet pay off?\" section will be empty until the next successful boot.");
+            catch (InvalidOperationException)
+            {
+                // A run is already in progress (e.g. Web + Engine racing on first boot) — retry next boot.
+            }
+            catch (Exception ex)
+            {
+                // Best-effort, illustrative-only seeding must NEVER take down app startup.
+                _logger.LogWarning(ex, "Demo outcome seeding failed for layer {Layer}; its \"Did the bet pay off?\" section will be empty until the next successful boot.", layer.DisplayName);
+            }
         }
     }
 

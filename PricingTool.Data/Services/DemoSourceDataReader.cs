@@ -9,6 +9,7 @@ public class DemoSourceDataReader : ISourceDataReader
 {
     private readonly DemoDataGenerator _generator = new();
 
-    public Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(CancellationToken ct = default) =>
+    // Demo mode ignores the layer context — every layer gets the same synthetic catalog (v1).
+    public Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(LayerSourceContext layer, CancellationToken ct = default) =>
         Task.FromResult(_generator.Generate(DateTime.UtcNow));
 }

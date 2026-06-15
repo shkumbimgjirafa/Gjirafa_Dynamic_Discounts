@@ -16,7 +16,7 @@ internal class FakeReader : ISourceDataReader
 {
     private readonly IReadOnlyList<SnapshotRow> _rows;
     public FakeReader(IReadOnlyList<SnapshotRow> rows) => _rows = rows;
-    public Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(CancellationToken ct = default) => Task.FromResult(_rows);
+    public Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(LayerSourceContext layer, CancellationToken ct = default) => Task.FromResult(_rows);
 }
 
 /// <summary>
@@ -32,9 +32,10 @@ internal class EfBulkWriter : IBulkWriteService
     public async Task<long> GetMaxProposedPriceIdAsync(CancellationToken ct = default)
         => await _db.ProposedPrices.AnyAsync(ct) ? await _db.ProposedPrices.MaxAsync(p => p.Id, ct) : 0;
 
-    public async Task DeleteSnapshotsForDateAsync(DateTime date, CancellationToken ct = default)
+    public async Task DeleteSnapshotsForDateAsync(int layerId, DateTime date, CancellationToken ct = default)
     {
-        var existing = await _db.DailySnapshots.Where(s => s.SnapshotDate == date.Date).ToListAsync(ct);
+        var existing = await _db.DailySnapshots
+            .Where(s => s.LayerId == layerId && s.SnapshotDate == date.Date).ToListAsync(ct);
         _db.DailySnapshots.RemoveRange(existing);
         await _db.SaveChangesAsync(ct);
     }
@@ -64,10 +65,26 @@ public class OrchestratorTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static void SeedBand(PricingToolDbContext db, decimal min = 0, decimal max = 500)
+    /// <summary>Seeds a single active layer and returns its id (tests scope everything to it).</summary>
+    private static int SeedLayer(PricingToolDbContext db)
+    {
+        var layer = new Layer
+        {
+            Brand = "GjirafaMall", CountryCode = "KS", DisplayName = "Test — KS",
+            OperationalDatabase = "GjirafaMall", StoreId = 2, TranslationCountryId = 1, WarehouseStoreId = 2,
+            Currency = "EUR", FilterVendors = true, ExcludeUnpublished = true,
+            RunTimeUtc = "03:00", CadenceHours = 24, IsActive = true, SortOrder = 0,
+        };
+        db.Layers.Add(layer);
+        db.SaveChanges();
+        return layer.Id;
+    }
+
+    private static void SeedBand(PricingToolDbContext db, int layerId, decimal min = 0, decimal max = 500)
     {
         var band = new PriceBand
         {
+            LayerId = layerId,
             Name = "test", MinPrice = min, MaxPrice = max,
             MarginFloorPct = 10, DiscountCeilingPct = 40,
             RoundingConvention = 0, RoundingEnabled = false, SortOrder = 0,
@@ -106,7 +123,7 @@ public class OrchestratorTests
     private static SnapshotRow Row(string sku, decimal? oldPrice, decimal? currentPrice, decimal? pptcv) => new()
     {
         Sku = sku, OldPrice = oldPrice, CurrentPrice = currentPrice, Pptcv = pptcv,
-        KsWarehouseStock = 10, SupplierWarehouseStock = 0,
+        LocalWarehouseStock = 10, SupplierWarehouseStock = 0,
         Qty7 = 7, Net7 = 50, Disc7 = 0.1m, Qty14 = 14, Net14 = 100, Disc14 = 0.1m,
         Qty30 = 30, Net30 = 220, Disc30 = 0.1m, Qty60 = 60, Net60 = 440, Disc60 = 0.1m,
         Qty90 = 90, Net90 = 660, Disc90 = 0.1m,
@@ -116,7 +133,8 @@ public class OrchestratorTests
     public async Task Run_SkipsNullCost_FlagsMissingPrice_PricesTheRest()
     {
         using var db = NewDb();
-        SeedBand(db);
+        var layerId = SeedLayer(db);
+        SeedBand(db, layerId);
         var rows = new List<SnapshotRow>
         {
             Row("SKU-OK", 100m, 80m, 40m),
@@ -125,7 +143,7 @@ public class OrchestratorTests
             Row("SKU-NOBAND", 600m, 550m, 600m),     // PPTCV outside the 0–500 test band (bands key off cost)
         };
 
-        var returned = await NewOrchestrator(db, rows).ExecuteRunAsync("test", isOnDemand: true);
+        var returned = await NewOrchestrator(db, rows).ExecuteRunAsync("test", isOnDemand: true, layerId);
 
         // Assert on the PERSISTED row, not the returned in-memory object — the run record is
         // the operational source of truth and must survive any change-tracker manipulation.
@@ -157,25 +175,27 @@ public class OrchestratorTests
     public async Task Run_RefusesToStart_WhenAnotherRunIsInProgress()
     {
         using var db = NewDb();
-        SeedBand(db);
-        db.PricingRuns.Add(new PricingRun { StartedUtc = DateTime.UtcNow, Status = RunStatus.Running });
+        var layerId = SeedLayer(db);
+        SeedBand(db, layerId);
+        db.PricingRuns.Add(new PricingRun { LayerId = layerId, StartedUtc = DateTime.UtcNow, Status = RunStatus.Running });
         db.SaveChanges();
 
         var orchestrator = NewOrchestrator(db, new List<SnapshotRow>());
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => orchestrator.ExecuteRunAsync("test", isOnDemand: true));
+            () => orchestrator.ExecuteRunAsync("test", isOnDemand: true, layerId));
     }
 
     [Fact]
     public async Task Run_FailsStaleRunningRuns_AndProceeds()
     {
         using var db = NewDb();
-        SeedBand(db);
-        db.PricingRuns.Add(new PricingRun { StartedUtc = DateTime.UtcNow.AddHours(-3), Status = RunStatus.Running });
+        var layerId = SeedLayer(db);
+        SeedBand(db, layerId);
+        db.PricingRuns.Add(new PricingRun { LayerId = layerId, StartedUtc = DateTime.UtcNow.AddHours(-3), Status = RunStatus.Running });
         db.SaveChanges();
 
         var run = await NewOrchestrator(db, new List<SnapshotRow> { Row("SKU-OK", 100m, 80m, 40m) })
-            .ExecuteRunAsync("test", isOnDemand: true);
+            .ExecuteRunAsync("test", isOnDemand: true, layerId);
 
         Assert.Equal(RunStatus.Succeeded, run.Status);
         var stale = await db.PricingRuns.OrderBy(r => r.Id).FirstAsync();
@@ -186,18 +206,19 @@ public class OrchestratorTests
     public async Task ZeroSaleStreaks_CountConsecutiveZeroQty7Days()
     {
         using var db = NewDb();
+        var layerId = SeedLayer(db);
         var snapshots = new SnapshotService(db, new EfBulkWriter(db));
         var today = new DateTime(2026, 6, 12);
 
         // SKU-A: zero for the last 2 days only; SKU-B: zero all 4 days.
         foreach (var (offset, qtyA) in new[] { (3, 5), (2, 0), (1, 0), (0, 0) })
         {
-            db.DailySnapshots.Add(new DailySnapshot { SnapshotDate = today.AddDays(-offset), Sku = "SKU-A", Qty7 = qtyA });
-            db.DailySnapshots.Add(new DailySnapshot { SnapshotDate = today.AddDays(-offset), Sku = "SKU-B", Qty7 = 0 });
+            db.DailySnapshots.Add(new DailySnapshot { LayerId = layerId, SnapshotDate = today.AddDays(-offset), Sku = "SKU-A", Qty7 = qtyA });
+            db.DailySnapshots.Add(new DailySnapshot { LayerId = layerId, SnapshotDate = today.AddDays(-offset), Sku = "SKU-B", Qty7 = 0 });
         }
         db.SaveChanges();
 
-        var streaks = await snapshots.GetZeroSaleStreaksAsync(today);
+        var streaks = await snapshots.GetZeroSaleStreaksAsync(layerId, today);
 
         Assert.Equal(3, streaks["SKU-A"]);
         Assert.Equal(4, streaks["SKU-B"]);

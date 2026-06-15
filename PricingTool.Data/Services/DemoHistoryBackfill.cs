@@ -23,18 +23,25 @@ public class DemoHistoryBackfill
 
     public async Task EnsureBackfilledAsync(int days = 35, CancellationToken ct = default)
     {
-        if (await _db.DailySnapshots.AnyAsync(ct)) return;
-
         var generator = new DemoDataGenerator();
         var today = DateTime.UtcNow.Date;
 
-        for (var offset = days; offset >= 1; offset--)
+        // Backfill every active layer (same synthetic catalog) so each layer's dashboard has data.
+        var layers = await _db.Layers.AsNoTracking()
+            .Where(l => l.IsActive).OrderBy(l => l.SortOrder).ToListAsync(ct);
+
+        foreach (var layer in layers)
         {
-            var date = today.AddDays(-offset);
-            var rows = generator.Generate(date);
-            await _snapshots.SaveSnapshotAsync(rows, date, date.AddHours(3), ct);
+            if (await _db.DailySnapshots.AnyAsync(s => s.LayerId == layer.Id, ct)) continue;
+
+            for (var offset = days; offset >= 1; offset--)
+            {
+                var date = today.AddDays(-offset);
+                var rows = generator.Generate(date);
+                await _snapshots.SaveSnapshotAsync(layer.Id, rows, date, date.AddHours(3), ct);
+            }
         }
 
-        _logger.LogInformation("Demo mode: backfilled {Days} days of snapshot history.", days);
+        _logger.LogInformation("Demo mode: backfilled {Days} days of snapshot history for {Count} layer(s).", days, layers.Count);
     }
 }

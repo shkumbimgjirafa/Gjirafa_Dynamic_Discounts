@@ -17,34 +17,83 @@ public static class PricingRoles
 }
 
 /// <summary>
-/// Idempotent startup seeding: 8 placeholder price bands (boundaries 2–7 are PLACEHOLDERS —
-/// confirm before go-live), per-band algorithm settings, and schedule defaults.
+/// Idempotent startup seeding: the layers (Brand + Country), then 8 placeholder price bands per
+/// layer with per-band algorithm settings. Band boundaries are PLACEHOLDERS (confirm before go-live)
+/// and are currency-agnostic — MKD/ALL layers should have their thresholds tuned via the Bands screen.
 /// No identity seeding — authentication is handled by the dev shim until Porta is wired in.
 /// </summary>
 public static class DbSeeder
 {
-    /// <summary>Band seed defaults. Margin floors / discount ceilings are conservative starting points.</summary>
+    /// <summary>
+    /// The canonical layer set. The migration seeds the same rows (so existing data can be backfilled
+    /// to the KS layer); this list keeps a fresh / in-memory DB self-sufficient. KS is first so it
+    /// takes Id 1 when identity-generated. Confirmed source ids per Gjirafa.
+    /// </summary>
+    public static readonly (string Brand, string Country, string Display, string OpDb, int StoreId, int CountryId, int WarehouseStoreId, string Currency, bool FilterVendors)[] LayerSeeds =
+    {
+        ("GjirafaMall", "KS", "GjirafaMall — Kosovo",          "GjirafaMall",      2, 1, 2, "EUR", true),
+        ("GjirafaMall", "MK", "GjirafaMall — North Macedonia", "GjirafaMall",      1, 3, 1, "MKD", true),
+        ("GjirafaMall", "AL", "GjirafaMall — Albania",         "GjirafaMall",      3, 2, 3, "ALL", true),
+        ("Gjirafa50",   "KS", "Gjirafa50 — Kosovo",            "GjirafaEcommerce", 2, 1, 2, "EUR", false),
+        ("Gjirafa50",   "MK", "Gjirafa50 — North Macedonia",   "GjirafaEcommerce", 1, 3, 1, "MKD", false),
+        ("Gjirafa50",   "AL", "Gjirafa50 — Albania",           "GjirafaEcommerce", 3, 2, 3, "ALL", false),
+    };
+
+    /// <summary>Band seed defaults (currency-agnostic). Margin floors / discount ceilings are conservative starting points.</summary>
     private static readonly (string Name, decimal Min, decimal Max, decimal MarginFloor, decimal DiscountCeiling, RoundingConvention Rounding)[] BandSeeds =
     {
-        ("€0–10",        0m,    10m,     8m,  50m, RoundingConvention.EndsIn99),
-        ("€10–50",       10m,   50m,    10m,  45m, RoundingConvention.EndsIn99),
-        ("€50–100",      50m,   100m,   10m,  40m, RoundingConvention.EndsIn99),
-        ("€100–250",     100m,  250m,   12m,  35m, RoundingConvention.EndsIn99),
-        ("€250–500",     250m,  500m,   12m,  30m, RoundingConvention.WholeEuro),
-        ("€500–750",     500m,  750m,   12m,  25m, RoundingConvention.WholeEuro),
-        ("€750–1,000",   750m,  1000m,  12m,  25m, RoundingConvention.WholeEuro),
-        ("€1,000+",      1000m, 999999m,15m,  20m, RoundingConvention.Charm995),
+        ("0–10",        0m,    10m,     8m,  50m, RoundingConvention.EndsIn99),
+        ("10–50",       10m,   50m,    10m,  45m, RoundingConvention.EndsIn99),
+        ("50–100",      50m,   100m,   10m,  40m, RoundingConvention.EndsIn99),
+        ("100–250",     100m,  250m,   12m,  35m, RoundingConvention.EndsIn99),
+        ("250–500",     250m,  500m,   12m,  30m, RoundingConvention.WholeEuro),
+        ("500–750",     500m,  750m,   12m,  25m, RoundingConvention.WholeEuro),
+        ("750–1,000",   750m,  1000m,  12m,  25m, RoundingConvention.WholeEuro),
+        ("1,000+",      1000m, 999999m,15m,  20m, RoundingConvention.Charm995),
     };
 
     public static async Task SeedCoreAsync(PricingToolDbContext db, PricingEngineOptions options, CancellationToken ct = default)
     {
-        if (!await db.PriceBands.AnyAsync(ct))
+        // 1) Ensure layers exist (idempotent — harmless if the migration already inserted them).
+        var sortOrder = 0;
+        foreach (var l in LayerSeeds)
         {
+            if (!await db.Layers.AnyAsync(x => x.Brand == l.Brand && x.CountryCode == l.Country, ct))
+            {
+                db.Layers.Add(new Layer
+                {
+                    Brand = l.Brand,
+                    CountryCode = l.Country,
+                    DisplayName = l.Display,
+                    OperationalDatabase = l.OpDb,
+                    StoreId = l.StoreId,
+                    TranslationCountryId = l.CountryId,
+                    WarehouseStoreId = l.WarehouseStoreId,
+                    Currency = l.Currency,
+                    FilterVendors = l.FilterVendors,
+                    ExcludeUnpublished = true,
+                    RunTimeUtc = options.DefaultRunTimeUtc,
+                    CadenceHours = options.DefaultCadenceHours,
+                    IsActive = true,
+                    SortOrder = sortOrder,
+                });
+            }
+            sortOrder++;
+        }
+        await db.SaveChangesAsync(ct);
+
+        // 2) Seed the default bands PER LAYER (guard is per-layer, not global).
+        var layers = await db.Layers.AsNoTracking().ToListAsync(ct);
+        foreach (var layer in layers)
+        {
+            if (await db.PriceBands.AnyAsync(b => b.LayerId == layer.Id, ct)) continue;
+
             var sort = 0;
             foreach (var seed in BandSeeds)
             {
                 var band = new PriceBand
                 {
+                    LayerId = layer.Id,
                     Name = seed.Name,
                     MinPrice = seed.Min,
                     MaxPrice = seed.Max,
@@ -68,23 +117,5 @@ public static class DbSeeder
             }
             await db.SaveChangesAsync(ct);
         }
-
-        async Task EnsureSetting(string key, string value)
-        {
-            if (!await db.ToolSettings.AnyAsync(s => s.Key == key, ct))
-            {
-                db.ToolSettings.Add(new ToolSetting
-                {
-                    Key = key,
-                    Value = value,
-                    UpdatedUtc = DateTime.UtcNow,
-                    UpdatedBy = "seed",
-                });
-                await db.SaveChangesAsync(ct);
-            }
-        }
-
-        await EnsureSetting(ToolSettingKeys.RunTimeUtc, options.DefaultRunTimeUtc);
-        await EnsureSetting(ToolSettingKeys.CadenceHours, options.DefaultCadenceHours.ToString());
     }
 }

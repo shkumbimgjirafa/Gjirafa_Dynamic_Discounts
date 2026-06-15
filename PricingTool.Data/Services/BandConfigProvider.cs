@@ -10,9 +10,10 @@ public class BandConfigProvider
 
     public BandConfigProvider(PricingToolDbContext db) => _db = db;
 
-    public async Task<IReadOnlyList<PriceBandConfig>> GetBandsAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<PriceBandConfig>> GetBandsAsync(int layerId, CancellationToken ct = default)
     {
         var bands = await _db.PriceBands
+            .Where(b => b.LayerId == layerId)
             .Include(b => b.AlgorithmSettings)
             .OrderBy(b => b.SortOrder)
             .AsNoTracking()

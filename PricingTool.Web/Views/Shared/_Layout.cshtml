@@ -8,10 +8,17 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
+@{
+    var activeLayers = ViewData["ActiveLayers"] as IReadOnlyList<PricingTool.Data.Entities.Layer>
+        ?? new List<PricingTool.Data.Entities.Layer>();
+    var currentLayer = ViewData["CurrentLayer"] as PricingTool.Data.Entities.Layer;
+    var currentBrand = currentLayer?.Brand ?? "GjirafaMall";
+    var returnUrl = Context.Request.Path + Context.Request.QueryString;
+}
     <header>
         <nav class="navbar navbar-expand-sm navbar-dark bg-dark border-bottom box-shadow mb-3">
             <div class="container-fluid">
-                <a class="navbar-brand" asp-controller="Home" asp-action="Index">⚡ GjirafaMall Pricing</a>
+                <a class="navbar-brand" asp-controller="Home" asp-action="Index">⚡ @currentBrand Pricing</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -25,6 +32,32 @@
                         <li class="nav-item"><a class="nav-link" asp-controller="Audit" asp-action="Index">Audit Log</a></li>
                     </ul>
                     <ul class="navbar-nav">
+                        @if (currentLayer is not null)
+                        {
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle text-light" href="#" role="button"
+                                   data-bs-toggle="dropdown" aria-expanded="false"
+                                   title="Switch layer (brand / country)">
+                                    🗂 @currentLayer.DisplayName
+                                </a>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    @foreach (var brandGroup in activeLayers.GroupBy(l => l.Brand))
+                                    {
+                                        <li><h6 class="dropdown-header">@brandGroup.Key</h6></li>
+                                        @foreach (var layer in brandGroup)
+                                        {
+                                            <li>
+                                                <a class="dropdown-item @(layer.Id == currentLayer.Id ? "active" : "")"
+                                                   asp-controller="Layer" asp-action="Select"
+                                                   asp-route-layerId="@layer.Id" asp-route-returnUrl="@returnUrl">
+                                                    @layer.CountryCode — @layer.Currency
+                                                </a>
+                                            </li>
+                                        }
+                                    }
+                                </ul>
+                            </li>
+                        }
                         <li class="nav-item">
                             <span class="nav-link text-light">demo
                                 <span class="badge bg-secondary" title="Authentication disabled until Porta SSO is integrated">no-auth</span>

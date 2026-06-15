@@ -21,6 +21,9 @@ public class ProposedPrice
     public long PricingRunId { get; set; }
     public PricingRun PricingRun { get; set; } = null!;
 
+    /// <summary>The layer this proposal belongs to (denormalised from the run for direct filtering).</summary>
+    public int LayerId { get; set; }
+
     public string Sku { get; set; } = "";
     public int? PriceBandId { get; set; }
 

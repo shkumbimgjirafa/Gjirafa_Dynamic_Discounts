@@ -16,27 +16,32 @@ public class ScheduleController : Controller
     private readonly ScheduleService _schedule;
     private readonly AuditService _audit;
     private readonly RunLauncher _launcher;
+    private readonly CurrentLayerService _layers;
 
-    public ScheduleController(PricingToolDbContext db, ScheduleService schedule, AuditService audit, RunLauncher launcher)
+    public ScheduleController(PricingToolDbContext db, ScheduleService schedule, AuditService audit,
+        RunLauncher launcher, CurrentLayerService layers)
     {
         _db = db;
         _schedule = schedule;
         _audit = audit;
         _launcher = launcher;
+        _layers = layers;
     }
 
     public async Task<IActionResult> Index()
     {
-        var info = await _schedule.GetAsync();
+        var layerId = await _layers.RequireCurrentIdAsync();
+        var info = await _schedule.GetAsync(layerId);
         var model = new ScheduleViewModel
         {
             RunTimeUtc = info.RunTimeUtc.ToString("HH:mm"),
             CadenceHours = info.CadenceHours,
             LastScheduledRunUtc = info.LastScheduledRunUtc,
             NextRunUtc = ScheduleService.ComputeNextRun(info, DateTime.UtcNow),
+            // Runs are serialized globally, so any run in progress blocks this layer's "Run now".
             RunInProgress = _launcher.IsRunning ||
                 await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running),
-            RecentRuns = await _db.PricingRuns.OrderByDescending(r => r.Id).Take(10).ToListAsync(),
+            RecentRuns = await _db.PricingRuns.Where(r => r.LayerId == layerId).OrderByDescending(r => r.Id).Take(10).ToListAsync(),
         };
         return View(model);
     }
@@ -57,30 +62,32 @@ public class ScheduleController : Controller
             return RedirectToAction(nameof(Index));
         }
 
+        var layerId = await _layers.RequireCurrentIdAsync();
         var user = User.Identity?.Name ?? "unknown";
-        var before = await _schedule.GetAsync();
+        var before = await _schedule.GetAsync(layerId);
 
-        await _schedule.SetAsync(ToolSettingKeys.RunTimeUtc, runTimeUtc, user);
-        await _schedule.SetAsync(ToolSettingKeys.CadenceHours, cadenceHours.ToString(), user);
+        await _schedule.SetScheduleAsync(layerId, runTimeUtc, cadenceHours);
 
         await _audit.LogAsync(user, AuditCategories.Config, "Changed run schedule",
-            nameof(ToolSetting), "Schedule",
+            nameof(Layer), layerId.ToString(),
             oldValue: $"{before.RunTimeUtc:HH\\:mm} UTC every {before.CadenceHours}h",
-            newValue: $"{runTimeUtc} UTC every {cadenceHours}h");
+            newValue: $"{runTimeUtc} UTC every {cadenceHours}h",
+            layerId: layerId);
 
         TempData["Message"] = "Schedule saved. The worker picks it up within a minute.";
         return RedirectToAction(nameof(Index));
     }
 
-    /// <summary>On-demand recalculation. Produces proposals only — nothing touches live prices.</summary>
+    /// <summary>On-demand recalculation for the current layer. Produces proposals only — nothing touches live prices.</summary>
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RunNow()
     {
+        var layerId = await _layers.RequireCurrentIdAsync();
         var user = User.Identity?.Name ?? "unknown";
-        if (_launcher.TryStartRun(user))
+        if (_launcher.TryStartRun(user, layerId))
         {
-            await _audit.LogAsync(user, AuditCategories.Run, "Triggered on-demand run");
+            await _audit.LogAsync(user, AuditCategories.Run, "Triggered on-demand run", layerId: layerId);
             TempData["Message"] = "Pricing run started. Refresh in a moment to see it complete.";
         }
         else

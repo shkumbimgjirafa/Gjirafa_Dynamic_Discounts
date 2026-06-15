@@ -1,15 +1,19 @@
+using Microsoft.EntityFrameworkCore;
+using PricingTool.Data;
 using PricingTool.Data.Services;
 
 namespace PricingTool.Engine;
 
 /// <summary>
-/// Hosted scheduler: reads the admin-configured run time/cadence from ToolSettings every
-/// minute (so schedule edits in the UI apply without a restart) and executes the pricing run
-/// when the slot arrives. The orchestrator's DB-level guard prevents overlap with "Run now"
-/// runs triggered from the Web app.
+/// Hosted scheduler. Once a minute it loads every ACTIVE layer and runs any whose scheduled slot
+/// has come due since its last scheduled run (per-layer RunTimeUtc / CadenceHours). Runs are fired
+/// sequentially — the orchestrator's global single-flight guard serializes them with each other and
+/// with "Run now" runs from the Web app. Schedule edits in the UI take effect within a minute.
 /// </summary>
 public class ScheduledRunWorker : BackgroundService
 {
+    private static readonly TimeSpan Tick = TimeSpan.FromMinutes(1);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ScheduledRunWorker> _logger;
 
@@ -23,66 +27,71 @@ public class ScheduledRunWorker : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            DateTime next;
-            using (var scope = _scopeFactory.CreateScope())
+            try
             {
-                var schedule = await scope.ServiceProvider.GetRequiredService<ScheduleService>().GetAsync(stoppingToken);
-                next = ScheduleService.ComputeNextRun(schedule, DateTime.UtcNow);
+                await TickAsync(stoppingToken);
             }
-            _logger.LogInformation("Next scheduled pricing run: {Next:u}", next);
-
-            while (!stoppingToken.IsCancellationRequested && DateTime.UtcNow < next)
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex)
             {
-                var wait = next - DateTime.UtcNow;
-                if (wait > TimeSpan.FromMinutes(1)) wait = TimeSpan.FromMinutes(1);
-                if (wait > TimeSpan.Zero)
-                {
-                    try { await Task.Delay(wait, stoppingToken); }
-                    catch (OperationCanceledException) { return; }
-                }
-
-                if (DateTime.UtcNow >= next) break;
-
-                // Pick up admin schedule changes mid-wait.
-                using var scope = _scopeFactory.CreateScope();
-                var schedule = await scope.ServiceProvider.GetRequiredService<ScheduleService>().GetAsync(stoppingToken);
-                var refreshed = ScheduleService.ComputeNextRun(schedule, DateTime.UtcNow);
-                if (refreshed != next)
-                {
-                    next = refreshed;
-                    _logger.LogInformation("Schedule changed; next pricing run: {Next:u}", next);
-                }
+                _logger.LogError(ex, "Scheduler tick failed; will retry next minute.");
             }
 
-            if (stoppingToken.IsCancellationRequested) return;
-
-            await RunOnceAsync(stoppingToken);
+            try { await Task.Delay(Tick, stoppingToken); }
+            catch (OperationCanceledException) { return; }
         }
     }
 
-    private async Task RunOnceAsync(CancellationToken ct)
+    private async Task TickAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+
+        List<PricingTool.Data.Entities.Layer> layers;
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<PricingToolDbContext>();
+            layers = await db.Layers.AsNoTracking()
+                .Where(l => l.IsActive).OrderBy(l => l.SortOrder).ToListAsync(ct);
+        }
+
+        foreach (var layer in layers)
+        {
+            if (ct.IsCancellationRequested) return;
+
+            var info = ScheduleService.ToInfo(layer);
+            // The most recent slot at/before now is the next future slot minus one cadence step.
+            var prevSlot = ScheduleService.ComputeNextRun(info, now).AddHours(-info.CadenceHours);
+            var due = info.LastScheduledRunUtc is null || info.LastScheduledRunUtc < prevSlot;
+            if (!due) continue;
+
+            await RunLayerAsync(layer.Id, layer.DisplayName, now, ct);
+        }
+    }
+
+    private async Task RunLayerAsync(int layerId, string layerName, DateTime now, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var orchestrator = scope.ServiceProvider.GetRequiredService<PricingRunOrchestrator>();
         var schedule = scope.ServiceProvider.GetRequiredService<ScheduleService>();
         try
         {
-            await orchestrator.ExecuteRunAsync("scheduler", isOnDemand: false, ct);
+            await orchestrator.ExecuteRunAsync("scheduler", isOnDemand: false, layerId, ct);
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning("Scheduled run skipped: {Reason}", ex.Message);
+            // Another run is in progress (serialized execution). Do NOT stamp LastScheduledRunUtc —
+            // leave this layer due so the next tick picks it up once the current run finishes.
+            _logger.LogWarning("Scheduled run for {Layer} skipped: {Reason}", layerName, ex.Message);
+            return;
         }
         catch (Exception ex)
         {
-            // The run record already captured the failure; keep the scheduler alive.
-            _logger.LogError(ex, "Scheduled pricing run failed.");
+            // The run record already captured the failure; keep the scheduler alive and consume the
+            // slot (a hard failure shouldn't loop every minute) by falling through to the stamp below.
+            _logger.LogError(ex, "Scheduled pricing run for {Layer} failed.", layerName);
         }
-        finally
-        {
-            await schedule.SetAsync(
-                Data.Entities.ToolSettingKeys.LastScheduledRunUtc,
-                DateTime.UtcNow.ToString("O"), "scheduler", CancellationToken.None);
-        }
+
+        // Consume this slot so it isn't retried every minute (on success or a recorded run failure).
+        await schedule.SetLastScheduledRunAsync(layerId, now, CancellationToken.None);
     }
 }

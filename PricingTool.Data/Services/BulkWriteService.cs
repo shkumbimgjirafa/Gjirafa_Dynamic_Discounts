@@ -14,7 +14,7 @@ namespace PricingTool.Data.Services;
 public interface IBulkWriteService
 {
     Task<long> GetMaxProposedPriceIdAsync(CancellationToken ct = default);
-    Task DeleteSnapshotsForDateAsync(DateTime date, CancellationToken ct = default);
+    Task DeleteSnapshotsForDateAsync(int layerId, DateTime date, CancellationToken ct = default);
     Task ReseedProposedPricesAsync(CancellationToken ct = default);
     Task BulkInsertSnapshotsAsync(IReadOnlyCollection<DailySnapshot> rows, CancellationToken ct = default);
     Task BulkInsertProposalsAsync(IReadOnlyCollection<ProposedPrice> proposals, CancellationToken ct = default);
@@ -48,12 +48,18 @@ public class BulkWriteService : IBulkWriteService
         return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
     }
 
-    public async Task DeleteSnapshotsForDateAsync(DateTime date, CancellationToken ct = default)
+    public async Task DeleteSnapshotsForDateAsync(int layerId, DateTime date, CancellationToken ct = default)
     {
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM [PricingTool].[DailySnapshots] WHERE [SnapshotDate] = @d";
+        // Scoped by LayerId: a same-day re-pull of one layer must not wipe another layer's snapshots.
+        cmd.CommandText = "DELETE FROM [PricingTool].[DailySnapshots] WHERE [LayerId] = @layer AND [SnapshotDate] = @d";
+        var pl = cmd.CreateParameter();
+        pl.ParameterName = "@layer";
+        pl.DbType = DbType.Int32;
+        pl.Value = layerId;
+        cmd.Parameters.Add(pl);
         var p = cmd.CreateParameter();
         p.ParameterName = "@d";
         p.DbType = DbType.Date;
@@ -107,11 +113,12 @@ public class BulkWriteService : IBulkWriteService
     private static DataTable BuildSnapshotTable(IReadOnlyCollection<DailySnapshot> rows)
     {
         var t = new DataTable();
+        t.Columns.Add("LayerId", typeof(int));
         t.Columns.Add("SnapshotDate", typeof(DateTime));
         t.Columns.Add("PulledAtUtc", typeof(DateTime));
         t.Columns.Add("Sku", typeof(string));
         AddNullableDecimals(t, "OldPrice", "CurrentPrice", "CurrentDiscountPct", "Pptcv", "GrossMargin");
-        t.Columns.Add("KsWarehouseStock", typeof(int));
+        t.Columns.Add("LocalWarehouseStock", typeof(int));
         t.Columns.Add("SupplierWarehouseStock", typeof(int));
         foreach (var w in new[] { "7", "14", "30", "60", "90" })
         {
@@ -124,10 +131,10 @@ public class BulkWriteService : IBulkWriteService
         foreach (var r in rows)
         {
             t.Rows.Add(
-                r.SnapshotDate, r.PulledAtUtc, r.Sku,
+                r.LayerId, r.SnapshotDate, r.PulledAtUtc, r.Sku,
                 Box(Round(r.OldPrice, 2)), Box(Round(r.CurrentPrice, 2)),
                 Box(Round(r.CurrentDiscountPct, 6)), Box(Round(r.Pptcv, 4)), Box(Round(r.GrossMargin, 4)),
-                r.KsWarehouseStock, r.SupplierWarehouseStock,
+                r.LocalWarehouseStock, r.SupplierWarehouseStock,
                 r.Qty7, Round(r.Net7, 2), Box(Round(r.Disc7, 6)),
                 r.Qty14, Round(r.Net14, 2), Box(Round(r.Disc14, 6)),
                 r.Qty30, Round(r.Net30, 2), Box(Round(r.Disc30, 6)),
@@ -143,6 +150,7 @@ public class BulkWriteService : IBulkWriteService
         var t = new DataTable();
         t.Columns.Add("Id", typeof(long));
         t.Columns.Add("PricingRunId", typeof(long));
+        t.Columns.Add("LayerId", typeof(int));
         t.Columns.Add("Sku", typeof(string));
         t.Columns.Add("PriceBandId", typeof(int)).AllowDBNull = true;
         AddNullableDecimals(t, "RawWeightedPrice", "Pptcv");
@@ -162,7 +170,7 @@ public class BulkWriteService : IBulkWriteService
         foreach (var p in proposals)
         {
             t.Rows.Add(
-                p.Id, p.PricingRunId, p.Sku, Box(p.PriceBandId),
+                p.Id, p.PricingRunId, p.LayerId, p.Sku, Box(p.PriceBandId),
                 Box(Round(p.RawWeightedPrice, 4)), Box(Round(p.Pptcv, 4)),
                 Round(p.OldPrice, 2), Round(p.CurrentPrice, 2), Round(p.ProposedPriceValue, 2),
                 Round(p.ChangePct, 4), p.HasChange,

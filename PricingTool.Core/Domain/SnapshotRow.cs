@@ -12,7 +12,8 @@ public class SnapshotRow
     public decimal? CurrentDiscountPct { get; init; }
     public decimal? Pptcv { get; init; }
     public decimal? GrossMargin { get; init; }
-    public int KsWarehouseStock { get; init; }
+    /// <summary>Stock held in the warehouse local to this layer's store (was "KS" when single-layer).</summary>
+    public int LocalWarehouseStock { get; init; }
     public int SupplierWarehouseStock { get; init; }
 
     public int Qty7 { get; init; }

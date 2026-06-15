@@ -5,41 +5,44 @@ namespace PricingTool.Data.Services;
 
 public record ScheduleInfo(TimeOnly RunTimeUtc, int CadenceHours, DateTime? LastScheduledRunUtc);
 
-/// <summary>Admin-editable schedule stored in ToolSettings; the worker reads it every cycle.</summary>
+/// <summary>Per-layer schedule, stored on the Layer row; the worker reads each active layer every cycle.</summary>
 public class ScheduleService
 {
     private readonly PricingToolDbContext _db;
 
     public ScheduleService(PricingToolDbContext db) => _db = db;
 
-    public async Task<ScheduleInfo> GetAsync(CancellationToken ct = default)
+    public async Task<ScheduleInfo> GetAsync(int layerId, CancellationToken ct = default)
     {
-        var settings = await _db.ToolSettings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value, ct);
-
-        var runTime = settings.TryGetValue(ToolSettingKeys.RunTimeUtc, out var t) && TimeOnly.TryParse(t, out var parsed)
-            ? parsed : new TimeOnly(3, 0);
-        var cadence = settings.TryGetValue(ToolSettingKeys.CadenceHours, out var c) && int.TryParse(c, out var hours) && hours > 0
-            ? hours : 24;
-        DateTime? lastRun = settings.TryGetValue(ToolSettingKeys.LastScheduledRunUtc, out var l)
-            && DateTime.TryParse(l, null, System.Globalization.DateTimeStyles.RoundtripKind, out var last)
-            ? last : null;
-
-        return new ScheduleInfo(runTime, cadence, lastRun);
+        var layer = await _db.Layers.AsNoTracking().FirstOrDefaultAsync(l => l.Id == layerId, ct)
+            ?? throw new InvalidOperationException($"Layer {layerId} not found.");
+        return ToInfo(layer);
     }
 
-    public async Task SetAsync(string key, string value, string updatedBy, CancellationToken ct = default)
+    /// <summary>Maps a layer's stored schedule fields to a <see cref="ScheduleInfo"/>.</summary>
+    public static ScheduleInfo ToInfo(Layer layer)
     {
-        var setting = await _db.ToolSettings.FindAsync(new object[] { key }, ct);
-        if (setting is null)
-        {
-            _db.ToolSettings.Add(new ToolSetting { Key = key, Value = value, UpdatedUtc = DateTime.UtcNow, UpdatedBy = updatedBy });
-        }
-        else
-        {
-            setting.Value = value;
-            setting.UpdatedUtc = DateTime.UtcNow;
-            setting.UpdatedBy = updatedBy;
-        }
+        var runTime = TimeOnly.TryParse(layer.RunTimeUtc, out var parsed) ? parsed : new TimeOnly(3, 0);
+        var cadence = layer.CadenceHours > 0 ? layer.CadenceHours : 24;
+        return new ScheduleInfo(runTime, cadence, layer.LastScheduledRunUtc);
+    }
+
+    /// <summary>Updates the run time / cadence for one layer.</summary>
+    public async Task SetScheduleAsync(int layerId, string runTimeUtc, int cadenceHours, CancellationToken ct = default)
+    {
+        var layer = await _db.Layers.FirstOrDefaultAsync(l => l.Id == layerId, ct)
+            ?? throw new InvalidOperationException($"Layer {layerId} not found.");
+        layer.RunTimeUtc = runTimeUtc;
+        layer.CadenceHours = cadenceHours;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Records the last scheduled-run timestamp for one layer (set by the worker).</summary>
+    public async Task SetLastScheduledRunAsync(int layerId, DateTime utc, CancellationToken ct = default)
+    {
+        var layer = await _db.Layers.FirstOrDefaultAsync(l => l.Id == layerId, ct);
+        if (layer is null) return;
+        layer.LastScheduledRunUtc = utc;
         await _db.SaveChangesAsync(ct);
     }
 

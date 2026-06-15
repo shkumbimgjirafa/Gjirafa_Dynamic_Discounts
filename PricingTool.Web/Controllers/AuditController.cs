@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PricingTool.Data;
 using PricingTool.Web.Models;
+using PricingTool.Web.Services;
 
 namespace PricingTool.Web.Controllers;
 
@@ -10,12 +11,20 @@ namespace PricingTool.Web.Controllers;
 public class AuditController : Controller
 {
     private readonly PricingToolDbContext _db;
+    private readonly CurrentLayerService _layers;
 
-    public AuditController(PricingToolDbContext db) => _db = db;
+    public AuditController(PricingToolDbContext db, CurrentLayerService layers)
+    {
+        _db = db;
+        _layers = layers;
+    }
 
     public async Task<IActionResult> Index(string? search, string? category, DateTime? from, DateTime? to)
     {
-        var query = _db.AuditLog.AsNoTracking().AsQueryable();
+        var layerId = await _layers.RequireCurrentIdAsync();
+        // Show this layer's entries plus legacy/global (null-layer) entries.
+        var query = _db.AuditLog.AsNoTracking()
+            .Where(e => e.LayerId == layerId || e.LayerId == null);
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(e =>

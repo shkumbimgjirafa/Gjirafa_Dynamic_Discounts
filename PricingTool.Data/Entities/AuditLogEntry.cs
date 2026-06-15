@@ -12,6 +12,10 @@ public static class AuditCategories
 public class AuditLogEntry
 {
     public long Id { get; set; }
+
+    /// <summary>The layer this entry relates to; null for global (non-layer-specific) actions.</summary>
+    public int? LayerId { get; set; }
+
     public DateTime TimestampUtc { get; set; }
     public string UserName { get; set; } = "";
     public string Category { get; set; } = "";

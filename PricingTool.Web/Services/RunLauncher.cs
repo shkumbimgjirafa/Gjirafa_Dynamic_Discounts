@@ -20,8 +20,11 @@ public class RunLauncher
 
     public bool IsRunning => Volatile.Read(ref _running) == 1;
 
-    /// <summary>Returns false when a run is already executing in this process.</summary>
-    public bool TryStartRun(string triggeredBy)
+    /// <summary>
+    /// Starts an on-demand run for one layer in the background. Returns false when a run is already
+    /// executing in this process (runs are serialized; the orchestrator also guards globally in DB).
+    /// </summary>
+    public bool TryStartRun(string triggeredBy, int layerId)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0) return false;
 
@@ -31,7 +34,7 @@ public class RunLauncher
             {
                 using var scope = _scopeFactory.CreateScope();
                 var orchestrator = scope.ServiceProvider.GetRequiredService<PricingRunOrchestrator>();
-                await orchestrator.ExecuteRunAsync(triggeredBy, isOnDemand: true);
+                await orchestrator.ExecuteRunAsync(triggeredBy, isOnDemand: true, layerId);
             }
             catch (Exception ex)
             {

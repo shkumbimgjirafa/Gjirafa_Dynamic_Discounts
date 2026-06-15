@@ -13,8 +13,17 @@ var builder = WebApplication.CreateBuilder(args);
 EnvFileLoader.ApplyDotEnv(builder);
 
 builder.Services.AddPricingTool(builder.Configuration);
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(o => o.Filters.Add<LayerContextFilter>());
 builder.Services.AddSingleton<RunLauncher>();
+
+// Multi-layer: session holds the selected layer; CurrentLayerService resolves it per request.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<CurrentLayerService>();
+builder.Services.AddSession(o =>
+{
+    o.Cookie.IsEssential = true;
+    o.IdleTimeout = TimeSpan.FromDays(7);
+});
 
 // AUTHENTICATION INTENTIONALLY DISABLED until Gjirafa's Porta SSO is integrated.
 // DevAuthHandler auto-signs every request in as a single "demo" user holding both the Analyst
@@ -36,6 +45,7 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -46,6 +46,9 @@ public class PriceChangeOutcome
 {
     public long Id { get; set; }
 
+    /// <summary>The layer this outcome belongs to.</summary>
+    public int LayerId { get; set; }
+
     /// <summary>The pushed proposal this measures. Nullable so an outcome survives proposal cleanup.</summary>
     public long? ProposedPriceId { get; set; }
     public ProposedPrice? ProposedPrice { get; set; }

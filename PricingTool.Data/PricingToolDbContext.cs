@@ -16,6 +16,7 @@ public class PricingToolDbContext : DbContext
 
     public PricingToolDbContext(DbContextOptions<PricingToolDbContext> options) : base(options) { }
 
+    public DbSet<Layer> Layers => Set<Layer>();
     public DbSet<DailySnapshot> DailySnapshots => Set<DailySnapshot>();
     public DbSet<PricingRun> PricingRuns => Set<PricingRun>();
     public DbSet<ProposedPrice> ProposedPrices => Set<ProposedPrice>();
@@ -32,11 +33,24 @@ public class PricingToolDbContext : DbContext
         base.OnModelCreating(builder);
         builder.HasDefaultSchema(Schema);
 
+        builder.Entity<Layer>(e =>
+        {
+            e.ToTable("Layers");
+            e.HasIndex(x => new { x.Brand, x.CountryCode }).IsUnique();
+            e.Property(x => x.Brand).HasMaxLength(64);
+            e.Property(x => x.CountryCode).HasMaxLength(8);
+            e.Property(x => x.DisplayName).HasMaxLength(128);
+            e.Property(x => x.OperationalDatabase).HasMaxLength(128);
+            e.Property(x => x.Currency).HasMaxLength(8);
+            e.Property(x => x.RunTimeUtc).HasMaxLength(8);
+        });
+
         builder.Entity<DailySnapshot>(e =>
         {
             e.ToTable("DailySnapshots");
-            e.HasIndex(x => new { x.SnapshotDate, x.Sku }).IsUnique();
+            e.HasIndex(x => new { x.LayerId, x.SnapshotDate, x.Sku }).IsUnique();
             e.HasIndex(x => x.Sku);
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.SnapshotDate).HasColumnType("date");
 
@@ -57,6 +71,8 @@ public class PricingToolDbContext : DbContext
             e.Property(x => x.TriggeredBy).HasMaxLength(256);
             e.Property(x => x.ErrorMessage).HasMaxLength(4000);
             e.HasIndex(x => x.StartedUtc);
+            e.HasIndex(x => new { x.LayerId, x.Status });
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<ProposedPrice>(e =>
@@ -66,6 +82,8 @@ public class PricingToolDbContext : DbContext
             e.HasIndex(x => new { x.PricingRunId, x.Sku }).IsUnique();
             e.HasIndex(x => x.Sku);
             e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.LayerId);
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.OldPrice).HasPrecision(18, 2);
             e.Property(x => x.CurrentPrice).HasPrecision(18, 2);
@@ -89,6 +107,8 @@ public class PricingToolDbContext : DbContext
             e.HasIndex(x => x.ProposedPriceId).IsUnique().HasFilter("[ProposedPriceId] IS NOT NULL");
             e.HasIndex(x => x.Verdict);
             e.HasIndex(x => x.AppliedUtc);
+            e.HasIndex(x => x.LayerId);
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.Note).HasMaxLength(512);
             e.Property(x => x.OldPrice).HasPrecision(18, 2);
@@ -119,6 +139,8 @@ public class PricingToolDbContext : DbContext
         builder.Entity<PriceBand>(e =>
         {
             e.ToTable("PriceBands");
+            e.HasIndex(x => x.LayerId);
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Name).HasMaxLength(128);
             e.Property(x => x.MinPrice).HasPrecision(18, 2);
             e.Property(x => x.MaxPrice).HasPrecision(18, 2);
@@ -138,6 +160,8 @@ public class PricingToolDbContext : DbContext
         {
             e.ToTable("AuditLog");
             e.HasIndex(x => x.TimestampUtc);
+            e.HasIndex(x => x.LayerId);
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.UserName).HasMaxLength(256);
             e.Property(x => x.Category).HasMaxLength(32);
             e.Property(x => x.Action).HasMaxLength(256);
@@ -157,7 +181,8 @@ public class PricingToolDbContext : DbContext
         builder.Entity<SkuOverride>(e =>
         {
             e.ToTable("SkuOverrides");
-            e.HasIndex(x => x.Sku).IsUnique();
+            e.HasIndex(x => new { x.LayerId, x.Sku }).IsUnique();
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.Note).HasMaxLength(512);
         });

@@ -11,8 +11,19 @@
 
    All sales windows are cumulative trailing windows ending at @now (UTC):
    90d ⊇ 60d ⊇ 30d ⊇ 14d ⊇ 7d.
+
+   MULTI-LAYER: the store/country filters and the vendor / unpublished toggles are now PARAMETERS,
+   mirroring SourceQueries.DailyDatasetInline. NOTE: this compiled procedure reads the GjirafaMall
+   operational database by three-part name; it CANNOT switch to GjirafaEcommerce (Gjirafa50) via a
+   parameter. Gjirafa50 layers must run in InlineQuery mode (SourceDataset:Mode=InlineQuery), where
+   the {opDb} token is substituted. Keep the body in sync with SourceQueries.cs.
    ============================================================================ */
 CREATE OR ALTER PROCEDURE dbo.usp_GetDailyPricingDataset
+    @StoreId              int,
+    @TranslationCountryId int,
+    @WarehouseStoreId     int,
+    @FilterVendors        bit = 1,
+    @ExcludeUnpublished   bit = 1
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -25,32 +36,36 @@ BEGIN
     DECLARE @d30  datetime = DATEADD(DAY, -30, @now);
     DECLARE @d60  datetime = DATEADD(DAY, -60, @now);
     DECLARE @d90  datetime = DATEADD(DAY, -90, @now);
+    DECLARE @storeIdStr varchar(16) = CAST(@StoreId AS varchar(16));
 
-    -- 0) Target vendors (v1 scope)
+    -- 0) Target vendors (GjirafaMall vendor set when @FilterVendors = 1; all vendors otherwise)
     SELECT v.Id INTO #vendors
     FROM GjirafaMall.dbo.Vendor v
     WHERE v.Deleted = 0
       AND v.Active = 1
-      AND (v.Name LIKE '%Gjiraf%' OR v.Name IN ('Dino Toys', 'Mysu', 'Apple'));
+      AND (@FilterVendors = 0 OR (v.Name LIKE '%Gjiraf%' OR v.Name IN ('Dino Toys', 'Mysu', 'Apple')));
     CREATE CLUSTERED INDEX cx ON #vendors (Id);
 
-    -- 1) Stock per product, vendor- and stock-filtered
+    -- 1) Stock per product, vendor- and stock-filtered; optional unpublished-store exclusion
     SELECT
         p.Id  AS ProductId,
         p.Sku,
-        SUM(CASE WHEN w.IsLocalToStoreIds = 2 THEN pwi.StockQuantity ELSE 0 END) AS KS_WarehouseStock,
+        SUM(CASE WHEN w.IsLocalToStoreIds = @WarehouseStoreId THEN pwi.StockQuantity ELSE 0 END) AS LocalWarehouseStock,
         SUM(CASE WHEN w.IsLocalToStores  = 0 THEN pwi.StockQuantity ELSE 0 END) AS Supplier_WarehouseStock
     INTO #stock
     FROM GjirafaMall.dbo.Product p
     INNER JOIN #vendors v ON v.Id = p.VendorId
     INNER JOIN GjirafaMall.dbo.ProductWarehouseInventory pwi ON pwi.ProductId = p.Id
     INNER JOIN GjirafaMall.dbo.Warehouse w ON w.Id = pwi.WarehouseId
+    WHERE (@ExcludeUnpublished = 0
+           OR p.UnpublishedStoreids IS NULL
+           OR p.UnpublishedStoreids NOT LIKE '%' + @storeIdStr + '%')
     GROUP BY p.Id, p.Sku
-    HAVING SUM(CASE WHEN w.IsLocalToStoreIds = 2 THEN pwi.StockQuantity ELSE 0 END)
+    HAVING SUM(CASE WHEN w.IsLocalToStoreIds = @WarehouseStoreId THEN pwi.StockQuantity ELSE 0 END)
          + SUM(CASE WHEN w.IsLocalToStores  = 0 THEN pwi.StockQuantity ELSE 0 END) <> 0;
     CREATE CLUSTERED INDEX cx ON #stock (ProductId);
 
-    -- 2) Sales, cumulative trailing windows to 90 days (Kosovo store only)
+    -- 2) Sales, cumulative trailing windows to 90 days (store @StoreId only)
     SELECT
         oi.ProductId,
         SUM(CASE WHEN o.CreatedOnUtc >= @d7  THEN oi.Quantity     ELSE 0 END) AS [7d_qty],
@@ -78,17 +93,17 @@ BEGIN
     INNER JOIN GjirafaMall.dbo.[Order] o ON o.Id = oi.OrderId
     INNER JOIN #stock st ON st.ProductId = oi.ProductId
     WHERE o.OrderStatusId IN (20, 30)
-      AND o.StoreId = 2
+      AND o.StoreId = @StoreId
       AND o.CreatedOnUtc >= @d90
     GROUP BY oi.ProductId;
     CREATE CLUSTERED INDEX cx ON #sales (ProductId);
 
-    -- 2b) Pricing (cost + margin) from GjirafaTranslations, Kosovo country
+    -- 2b) Pricing (cost + margin) from GjirafaTranslations (shared), country @TranslationCountryId
     SELECT pp.ProductCode AS Sku, pp.PPTCV, pp.GrossMargin
     INTO #pricing
     FROM GjirafaTranslations.dbo.ProductPricing pp
     INNER JOIN #stock st ON st.Sku = pp.ProductCode
-    WHERE pp.CountryId = 1;
+    WHERE pp.CountryId = @TranslationCountryId;
     CREATE CLUSTERED INDEX cx ON #pricing (Sku);
 
     -- 3) Final dataset, one row per in-scope SKU
@@ -99,7 +114,7 @@ BEGIN
         (px.OldPrice - px.CurrentPrice) / NULLIF(px.OldPrice, 0) AS CurrentDiscountPct,
         pr.PPTCV,
         pr.GrossMargin,
-        st.KS_WarehouseStock,
+        st.LocalWarehouseStock,
         st.Supplier_WarehouseStock,
         ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],  s.[7d_avg_discount_pct],
         ISNULL(s.[14d_qty], 0) AS [14d_qty], ISNULL(s.[14d_net], 0) AS [14d_net], s.[14d_avg_discount_pct],
@@ -110,7 +125,7 @@ BEGIN
     OUTER APPLY (
         SELECT TOP 1 tp.Price, tp.OldPrice
         FROM GjirafaMall.dbo.TierPrice tp
-        WHERE tp.ProductId = st.ProductId AND tp.StoreId = 2
+        WHERE tp.ProductId = st.ProductId AND tp.StoreId = @StoreId
         ORDER BY tp.Id DESC
     ) tp
     OUTER APPLY (
@@ -121,7 +136,7 @@ BEGIN
         FROM GjirafaMall.dbo.Discount_AppliedToProducts dap
         INNER JOIN GjirafaMall.dbo.Discount d ON d.Id = dap.Discount_Id
         WHERE dap.Product_Id = st.ProductId
-          AND d.StoreId = 2
+          AND d.StoreId = @StoreId
           AND d.RequiresCouponCode = 0
           AND @now BETWEEN ISNULL(d.StartDateUtc, '1900') AND ISNULL(d.EndDateUtc, '2999')  -- uses the SAME @now
         ORDER BY IIF(d.UsePercentage = 1,

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using PricingTool.Data;
 using PricingTool.Data.Entities;
 using PricingTool.Web.Models;
+using PricingTool.Web.Services;
 
 namespace PricingTool.Web.Controllers;
 
@@ -13,16 +14,23 @@ namespace PricingTool.Web.Controllers;
 public class HomeController : Controller
 {
     private readonly PricingToolDbContext _db;
+    private readonly CurrentLayerService _layers;
 
-    public HomeController(PricingToolDbContext db) => _db = db;
+    public HomeController(PricingToolDbContext db, CurrentLayerService layers)
+    {
+        _db = db;
+        _layers = layers;
+    }
 
     public async Task<IActionResult> Index()
     {
+        var layerId = await _layers.RequireCurrentIdAsync();
         var model = new DashboardViewModel();
 
         // ---- Daily KPI trend from snapshots (7d trailing window normalized to per-day run rates).
         // Margin reconciles VAT-exclusive net revenue against VAT-exclusive PPTCV cost.
         var kpiRows = await _db.DailySnapshots
+            .Where(s => s.LayerId == layerId)
             .GroupBy(s => s.SnapshotDate)
             .Select(g => new
             {
@@ -58,7 +66,7 @@ public class HomeController : Controller
 
         // ---- Latest finished run: attribution + health flags.
         var lastRun = await _db.PricingRuns
-            .Where(r => r.Status != RunStatus.Running)
+            .Where(r => r.LayerId == layerId && r.Status != RunStatus.Running)
             .OrderByDescending(r => r.Id)
             .FirstOrDefaultAsync();
         model.LastRun = lastRun;
@@ -70,7 +78,7 @@ public class HomeController : Controller
                 .Select(p => new { p.PriceBandId, p.ChangePct, p.ReasonCodes, p.GuardrailFlags })
                 .ToListAsync();
 
-            var bandNames = await _db.PriceBands.ToDictionaryAsync(b => b.Id, b => b.Name);
+            var bandNames = await _db.PriceBands.Where(b => b.LayerId == layerId).ToDictionaryAsync(b => b.Id, b => b.Name);
 
             model.AlgorithmAttribution = changed
                 .SelectMany(p => p.ReasonCodes.Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -98,12 +106,12 @@ public class HomeController : Controller
         }
 
         model.FailedRunsLast7Days = await _db.PricingRuns
-            .CountAsync(r => r.Status == RunStatus.Failed && r.StartedUtc >= DateTime.UtcNow.AddDays(-7));
+            .CountAsync(r => r.LayerId == layerId && r.Status == RunStatus.Failed && r.StartedUtc >= DateTime.UtcNow.AddDays(-7));
 
         // ---- "Did the bet pay off?" — realized impact of pushed changes, judged by intent.
         // Materialize first, then compute deltas + group in memory (matches the attribution idiom).
         var maturedRaw = await _db.PriceChangeOutcomes
-            .Where(o => o.Verdict != OutcomeVerdict.Pending)
+            .Where(o => o.LayerId == layerId && o.Verdict != OutcomeVerdict.Pending)
             .Select(o => new { o.Sku, o.Intent, o.Verdict, o.PreUnitsPerDay, o.PostUnitsPerDay, o.PreGrossProfitPerDay, o.PostGrossProfitPerDay })
             .ToListAsync();
 

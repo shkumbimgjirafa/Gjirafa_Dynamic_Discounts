@@ -20,7 +20,7 @@
         <dt class="col-sm-2">Cost / margin</dt>
         <dd class="col-sm-10">PPTCV @(Model.Latest.Pptcv?.ToString("0.00") ?? "NULL ⚠") · GrossMargin @(Model.Latest.GrossMargin?.ToString("0.##") ?? "NULL")%</dd>
         <dt class="col-sm-2">Stock</dt>
-        <dd class="col-sm-10">Kosovo @Model.Latest.KsWarehouseStock · Supplier @Model.Latest.SupplierWarehouseStock</dd>
+        <dd class="col-sm-10">Local @Model.Latest.LocalWarehouseStock · Supplier @Model.Latest.SupplierWarehouseStock</dd>
         <dt class="col-sm-2">Sales (7/30/90d)</dt>
         <dd class="col-sm-10">@Model.Latest.Qty7 / @Model.Latest.Qty30 / @Model.Latest.Qty90 units ·
             €@Model.Latest.Net7.ToString("0.00") / €@Model.Latest.Net30.ToString("0.00") / €@Model.Latest.Net90.ToString("0.00") net (excl. VAT)</dd>

@@ -7,6 +7,7 @@ using PricingTool.Data;
 using PricingTool.Data.Entities;
 using PricingTool.Data.Services;
 using PricingTool.Web.Models;
+using PricingTool.Web.Services;
 
 namespace PricingTool.Web.Controllers;
 
@@ -15,16 +16,20 @@ public class BandsController : Controller
 {
     private readonly PricingToolDbContext _db;
     private readonly AuditService _audit;
+    private readonly CurrentLayerService _layers;
 
-    public BandsController(PricingToolDbContext db, AuditService audit)
+    public BandsController(PricingToolDbContext db, AuditService audit, CurrentLayerService layers)
     {
         _db = db;
         _audit = audit;
+        _layers = layers;
     }
 
     public async Task<IActionResult> Index()
     {
+        var layerId = await _layers.RequireCurrentIdAsync();
         var bands = await _db.PriceBands
+            .Where(b => b.LayerId == layerId)
             .Include(b => b.AlgorithmSettings)
             .OrderBy(b => b.SortOrder)
             .ToListAsync();
@@ -33,7 +38,9 @@ public class BandsController : Controller
 
     public async Task<IActionResult> Edit(int id)
     {
-        var band = await _db.PriceBands.Include(b => b.AlgorithmSettings).FirstOrDefaultAsync(b => b.Id == id);
+        var layerId = await _layers.RequireCurrentIdAsync();
+        var band = await _db.PriceBands.Include(b => b.AlgorithmSettings)
+            .FirstOrDefaultAsync(b => b.Id == id && b.LayerId == layerId);
         if (band is null) return NotFound();
         return View(ToEditModel(band));
     }
@@ -43,7 +50,9 @@ public class BandsController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Edit(BandEditModel model)
     {
-        var band = await _db.PriceBands.Include(b => b.AlgorithmSettings).FirstOrDefaultAsync(b => b.Id == model.Id);
+        var layerId = await _layers.RequireCurrentIdAsync();
+        var band = await _db.PriceBands.Include(b => b.AlgorithmSettings)
+            .FirstOrDefaultAsync(b => b.Id == model.Id && b.LayerId == layerId);
         if (band is null) return NotFound();
 
         if (model.MaxPrice <= model.MinPrice)
@@ -84,7 +93,7 @@ public class BandsController : Controller
         await _db.SaveChangesAsync();
         await _audit.LogAsync(User.Identity?.Name ?? "unknown", AuditCategories.Config,
             $"Edited band '{band.Name}'", nameof(PriceBand), band.Id.ToString(),
-            oldValue: before, newValue: SerializeBand(band));
+            oldValue: before, newValue: SerializeBand(band), layerId: layerId);
 
         TempData["Message"] = $"Band '{band.Name}' saved.";
         return RedirectToAction(nameof(Index));

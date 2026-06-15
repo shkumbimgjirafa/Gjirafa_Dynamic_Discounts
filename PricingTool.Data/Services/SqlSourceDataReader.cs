@@ -26,7 +26,7 @@ public class SqlSourceDataReader : ISourceDataReader
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(LayerSourceContext layer, CancellationToken ct = default)
     {
         var rows = new List<SnapshotRow>();
 
@@ -43,8 +43,17 @@ public class SqlSourceDataReader : ISourceDataReader
         else
         {
             command.CommandType = System.Data.CommandType.Text;
-            command.CommandText = SourceQueries.DailyDatasetInline;
+            // The operational DB is baked into the query as a token because the source tables are
+            // referenced by three-part name; overriding InitialCatalog alone would not switch DBs.
+            command.CommandText = SourceQueries.DailyDatasetInline.Replace(
+                SourceQueries.OperationalDbToken, SafeDbName(layer.OperationalDatabase));
         }
+
+        command.Parameters.AddWithValue("@StoreId", layer.StoreId);
+        command.Parameters.AddWithValue("@TranslationCountryId", layer.TranslationCountryId);
+        command.Parameters.AddWithValue("@WarehouseStoreId", layer.WarehouseStoreId);
+        command.Parameters.AddWithValue("@FilterVendors", layer.FilterVendors);
+        command.Parameters.AddWithValue("@ExcludeUnpublished", layer.ExcludeUnpublished);
 
         await using var reader = await command.ExecuteReaderAsync(ct);
 
@@ -73,7 +82,7 @@ public class SqlSourceDataReader : ISourceDataReader
                 CurrentDiscountPct = Dec(reader, "CurrentDiscountPct"),
                 Pptcv = Dec(reader, "PPTCV"),
                 GrossMargin = Dec(reader, "GrossMargin"),
-                KsWarehouseStock = Int0(reader, "KS_WarehouseStock"),
+                LocalWarehouseStock = Int0(reader, "LocalWarehouseStock"),
                 SupplierWarehouseStock = Int0(reader, "Supplier_WarehouseStock"),
                 Qty7 = Int0(reader, "7d_qty"),
                 Net7 = Dec0(reader, "7d_net"),
@@ -94,8 +103,22 @@ public class SqlSourceDataReader : ISourceDataReader
             });
         }
 
-        _logger.LogInformation("Pulled {Count} SKUs from the source dataset ({Mode}).",
-            rows.Count, _useStoredProcedure ? "stored procedure" : "inline query");
+        _logger.LogInformation("Pulled {Count} SKUs from {Db} ({Mode}).",
+            rows.Count, layer.OperationalDatabase, _useStoredProcedure ? "stored procedure" : "inline query");
         return rows;
+    }
+
+    /// <summary>
+    /// Guards the operational DB name before it is concatenated into the SQL. Values come from our
+    /// own seeded Layer table, but validating keeps this safe if a layer is ever edited by hand.
+    /// </summary>
+    private static string SafeDbName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) ||
+            !name.All(c => char.IsLetterOrDigit(c) || c == '_'))
+        {
+            throw new InvalidOperationException($"Invalid operational database name '{name}'.");
+        }
+        return name;
     }
 }

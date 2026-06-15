@@ -60,16 +60,26 @@ public class PricingRunOrchestrator
         _logger = logger;
     }
 
-    /// <summary>Runs a full pricing cycle. Throws InvalidOperationException if a run is already in progress.</summary>
-    public async Task<PricingRun> ExecuteRunAsync(string triggeredBy, bool isOnDemand, CancellationToken ct = default)
+    /// <summary>
+    /// Runs a full pricing cycle for one layer. Throws InvalidOperationException if a run is already
+    /// in progress (runs are serialized globally — the bulk-write path is not concurrency-safe) or
+    /// if the layer does not exist / is inactive.
+    /// </summary>
+    public async Task<PricingRun> ExecuteRunAsync(string triggeredBy, bool isOnDemand, int layerId, CancellationToken ct = default)
     {
         await FailStaleRunsAsync(ct);
 
+        var layer = await _db.Layers.AsNoTracking().FirstOrDefaultAsync(l => l.Id == layerId && l.IsActive, ct)
+            ?? throw new InvalidOperationException($"Layer {layerId} not found or is inactive.");
+
+        // Runs are serialized across ALL layers: BulkWriteService reseeds identity and deletes
+        // snapshots at table scope, so two concurrent runs would corrupt each other.
         if (await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running, ct))
             throw new InvalidOperationException("A pricing run is already in progress.");
 
         var run = new PricingRun
         {
+            LayerId = layerId,
             StartedUtc = DateTime.UtcNow,
             Status = RunStatus.Running,
             TriggeredBy = triggeredBy,
@@ -77,13 +87,24 @@ public class PricingRunOrchestrator
         };
         _db.PricingRuns.Add(run);
         await _db.SaveChangesAsync(ct);
-        await _audit.LogAsync(triggeredBy, AuditCategories.Run, isOnDemand ? "Run started (on demand)" : "Run started (scheduled)",
-            nameof(PricingRun), run.Id.ToString(), ct: ct);
+        await _audit.LogAsync(triggeredBy, AuditCategories.Run,
+            $"Run started ({(isOnDemand ? "on demand" : "scheduled")}) for {layer.DisplayName}",
+            nameof(PricingRun), run.Id.ToString(), layerId: layerId, ct: ct);
 
         try
         {
+            var sourceContext = new LayerSourceContext
+            {
+                OperationalDatabase = layer.OperationalDatabase,
+                StoreId = layer.StoreId,
+                TranslationCountryId = layer.TranslationCountryId,
+                WarehouseStoreId = layer.WarehouseStoreId,
+                FilterVendors = layer.FilterVendors,
+                ExcludeUnpublished = layer.ExcludeUnpublished,
+            };
+
             var pulledAt = DateTime.UtcNow;
-            var rows = await _reader.GetDailyDatasetAsync(ct);
+            var rows = await _reader.GetDailyDatasetAsync(sourceContext, ct);
 
             // DailySnapshots is unique per (date, Sku) and ProposedPrices per (run, Sku). The source
             // can in principle return the same Sku for two ProductIds; de-dupe defensively so a bulk
@@ -100,12 +121,12 @@ public class PricingRunOrchestrator
             run.SkuCount = rows.Count;
             await _db.SaveChangesAsync(ct); // surface SkuCount + "data pulled" progress immediately
 
-            await _snapshots.SaveSnapshotAsync(rows, pulledAt.Date, pulledAt, ct);
+            await _snapshots.SaveSnapshotAsync(layerId, rows, pulledAt.Date, pulledAt, ct);
 
-            var bands = await _bandProvider.GetBandsAsync(ct);
-            var streaks = await _snapshots.GetZeroSaleStreaksAsync(pulledAt.Date, ct: ct);
+            var bands = await _bandProvider.GetBandsAsync(layerId, ct);
+            var streaks = await _snapshots.GetZeroSaleStreaksAsync(layerId, pulledAt.Date, ct: ct);
             var roundingOverrides = await _db.SkuOverrides.AsNoTracking()
-                .Where(o => o.RoundingDisabled)
+                .Where(o => o.LayerId == layerId && o.RoundingDisabled)
                 .Select(o => o.Sku)
                 .ToListAsync(ct);
             var roundingDisabledSkus = roundingOverrides.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -124,6 +145,7 @@ public class PricingRunOrchestrator
                     var proposal = PriceOneSku(row, bands, streaks, roundingDisabledSkus, pulledAt);
                     proposal.Id = nextProposalId++;
                     proposal.PricingRunId = run.Id;
+                    proposal.LayerId = layerId;
                     foreach (var vote in proposal.Votes)
                         vote.ProposedPriceId = proposal.Id;
                     buffer.Add(proposal);
@@ -159,7 +181,7 @@ public class PricingRunOrchestrator
 
             await _audit.LogAsync(triggeredBy, AuditCategories.Run,
                 $"Run finished: {run.Status}", nameof(PricingRun), run.Id.ToString(),
-                newValue: $"SKUs={run.SkuCount}, proposals={run.ProposalCount}, skipped={run.SkippedCount}, errors={run.ErrorCount}", ct: ct);
+                newValue: $"SKUs={run.SkuCount}, proposals={run.ProposalCount}, skipped={run.SkippedCount}, errors={run.ErrorCount}", layerId: layerId, ct: ct);
 
             // Grade matured price-change outcomes. Never let this fail an otherwise-successful run.
             try
@@ -183,7 +205,7 @@ public class PricingRunOrchestrator
             run.ErrorMessage = ex.Message;
             await _db.SaveChangesAsync(CancellationToken.None);
             await _audit.LogAsync(triggeredBy, AuditCategories.Run, "Run failed",
-                nameof(PricingRun), run.Id.ToString(), newValue: ex.Message, ct: CancellationToken.None);
+                nameof(PricingRun), run.Id.ToString(), newValue: ex.Message, layerId: layerId, ct: CancellationToken.None);
             _logger.LogError(ex, "Pricing run {RunId} failed.", run.Id);
             throw;
         }
@@ -218,7 +240,7 @@ public class PricingRunOrchestrator
             CurrentPrice = currentPrice,
             Pptcv = row.Pptcv,
             GrossMarginPct = row.GrossMargin,
-            KsStock = row.KsWarehouseStock,
+            KsStock = row.LocalWarehouseStock,
             SupplierStock = row.SupplierWarehouseStock,
             Qty7 = row.Qty7, Net7 = row.Net7, Disc7 = row.Disc7,
             Qty14 = row.Qty14, Net14 = row.Net14, Disc14 = row.Disc14,

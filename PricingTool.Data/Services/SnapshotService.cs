@@ -26,14 +26,15 @@ public class SnapshotService
     /// cannot insert in reasonable time.
     /// </summary>
     public async Task<int> SaveSnapshotAsync(
-        IReadOnlyList<SnapshotRow> rows, DateTime snapshotDate, DateTime pulledAtUtc, CancellationToken ct = default)
+        int layerId, IReadOnlyList<SnapshotRow> rows, DateTime snapshotDate, DateTime pulledAtUtc, CancellationToken ct = default)
     {
         var date = snapshotDate.Date;
 
-        await _bulk.DeleteSnapshotsForDateAsync(date, ct);
+        await _bulk.DeleteSnapshotsForDateAsync(layerId, date, ct);
 
         var entities = rows.Select(r => new DailySnapshot
         {
+            LayerId = layerId,
             SnapshotDate = date,
             PulledAtUtc = pulledAtUtc,
             Sku = r.Sku,
@@ -42,7 +43,7 @@ public class SnapshotService
             CurrentDiscountPct = r.CurrentDiscountPct,
             Pptcv = r.Pptcv,
             GrossMargin = r.GrossMargin,
-            KsWarehouseStock = r.KsWarehouseStock,
+            LocalWarehouseStock = r.LocalWarehouseStock,
             SupplierWarehouseStock = r.SupplierWarehouseStock,
             Qty7 = r.Qty7, Net7 = r.Net7, Disc7 = r.Disc7,
             Qty14 = r.Qty14, Net14 = r.Net14, Disc14 = r.Disc14,
@@ -62,11 +63,11 @@ public class SnapshotService
     /// STOCK_AGING and DEAD_STOCK. Gaps in snapshot history simply aren't counted.
     /// </summary>
     public async Task<IReadOnlyDictionary<string, int>> GetZeroSaleStreaksAsync(
-        DateTime asOfDate, int lookbackDays = 180, CancellationToken ct = default)
+        int layerId, DateTime asOfDate, int lookbackDays = 180, CancellationToken ct = default)
     {
         var from = asOfDate.Date.AddDays(-lookbackDays);
         var history = await _db.DailySnapshots
-            .Where(s => s.SnapshotDate >= from && s.SnapshotDate <= asOfDate.Date)
+            .Where(s => s.LayerId == layerId && s.SnapshotDate >= from && s.SnapshotDate <= asOfDate.Date)
             .Select(s => new { s.Sku, s.SnapshotDate, s.Qty7 })
             .AsNoTracking()
             .ToListAsync(ct);

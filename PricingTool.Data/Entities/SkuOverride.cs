@@ -4,6 +4,10 @@ namespace PricingTool.Data.Entities;
 public class SkuOverride
 {
     public int Id { get; set; }
+
+    /// <summary>The layer this override applies to — same SKU can differ across layers.</summary>
+    public int LayerId { get; set; }
+
     public string Sku { get; set; } = "";
     public bool RoundingDisabled { get; set; }
     public string? Note { get; set; }

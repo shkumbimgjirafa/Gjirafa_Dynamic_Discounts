@@ -9,6 +9,7 @@ using PricingTool.Data;
 using PricingTool.Data.Entities;
 using PricingTool.Data.Services;
 using PricingTool.Web.Models;
+using PricingTool.Web.Services;
 
 namespace PricingTool.Web.Controllers;
 
@@ -19,31 +20,35 @@ public class ProposalsController : Controller
     private readonly AuditService _audit;
     private readonly IPricePushService _pushService;
     private readonly PricingEngineOptions _options;
+    private readonly CurrentLayerService _layers;
 
     public ProposalsController(
         PricingToolDbContext db, AuditService audit, IPricePushService pushService,
-        IOptions<PricingEngineOptions> options)
+        IOptions<PricingEngineOptions> options, CurrentLayerService layers)
     {
         _db = db;
         _audit = audit;
         _pushService = pushService;
         _options = options.Value;
+        _layers = layers;
     }
 
     public async Task<IActionResult> Index([FromQuery] ProposalsFilter filter)
     {
+        var layerId = await _layers.RequireCurrentIdAsync();
         var model = new ProposalsViewModel
         {
             Filter = filter,
             ConfirmationThresholdPct = _options.ChangeConfirmationThresholdPct,
-            Bands = await _db.PriceBands.OrderBy(b => b.SortOrder).ToListAsync(),
+            Bands = await _db.PriceBands.Where(b => b.LayerId == layerId).OrderBy(b => b.SortOrder).ToListAsync(),
             AlgorithmCodes = AlgorithmCodes.All.Select(a => a.Code).ToList(),
-            RecentRuns = await _db.PricingRuns.OrderByDescending(r => r.Id).Take(15).ToListAsync(),
+            RecentRuns = await _db.PricingRuns.Where(r => r.LayerId == layerId).OrderByDescending(r => r.Id).Take(15).ToListAsync(),
         };
 
+        // Only ever resolve a run within the current layer (scoped lookup, not a global Find).
         var run = filter.RunId.HasValue
-            ? await _db.PricingRuns.FindAsync(filter.RunId.Value)
-            : await _db.PricingRuns.Where(r => r.Status != RunStatus.Running)
+            ? await _db.PricingRuns.FirstOrDefaultAsync(r => r.Id == filter.RunId.Value && r.LayerId == layerId)
+            : await _db.PricingRuns.Where(r => r.LayerId == layerId && r.Status != RunStatus.Running)
                 .OrderByDescending(r => r.Id).FirstOrDefaultAsync();
         if (run is null) return View(model);
         model.Run = run;
@@ -93,11 +98,19 @@ public class ProposalsController : Controller
 
     // ---- Review actions (Manager only) ------------------------------------
 
+    /// <summary>Guards write actions so a crafted runId from another layer can't be mutated here.</summary>
+    private async Task<bool> RunBelongsToCurrentLayerAsync(long runId)
+    {
+        var layerId = await _layers.RequireCurrentIdAsync();
+        return await _db.PricingRuns.AnyAsync(r => r.Id == runId && r.LayerId == layerId);
+    }
+
     [HttpPost]
     [Authorize(Roles = "Manager")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Approve(long runId, long[] ids, bool confirmLarge, [FromForm] ProposalsFilter filter)
     {
+        if (!await RunBelongsToCurrentLayerAsync(runId)) return NotFound();
         if (ids.Length == 0)
         {
             TempData["Error"] = "No proposals selected.";
@@ -116,6 +129,7 @@ public class ProposalsController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ApproveAll(long runId, bool confirmLarge, [FromForm] ProposalsFilter filter)
     {
+        if (!await RunBelongsToCurrentLayerAsync(runId)) return NotFound();
         filter.RunId = runId;
         filter.Status = "Pending";
         var proposals = await BuildFilteredQuery(filter).ToListAsync();
@@ -152,7 +166,8 @@ public class ProposalsController : Controller
 
         await _audit.LogAsync(user, AuditCategories.Review,
             $"Approved {proposals.Count} proposal(s)", nameof(PricingRun), runId.ToString(),
-            newValue: string.Join(",", proposals.Take(50).Select(p => p.Sku)));
+            newValue: string.Join(",", proposals.Take(50).Select(p => p.Sku)),
+            layerId: await _layers.RequireCurrentIdAsync());
 
         TempData["Message"] = $"Approved {proposals.Count} proposal(s).";
         return RedirectToFiltered(runId, filter);
@@ -163,6 +178,7 @@ public class ProposalsController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Reject(long runId, long[] ids, [FromForm] ProposalsFilter filter)
     {
+        if (!await RunBelongsToCurrentLayerAsync(runId)) return NotFound();
         var user = User.Identity?.Name ?? "unknown";
         var proposals = await _db.ProposedPrices
             .Where(p => p.PricingRunId == runId && ids.Contains(p.Id) &&
@@ -179,7 +195,8 @@ public class ProposalsController : Controller
 
         await _audit.LogAsync(user, AuditCategories.Review,
             $"Rejected {proposals.Count} proposal(s)", nameof(PricingRun), runId.ToString(),
-            newValue: string.Join(",", proposals.Take(50).Select(p => p.Sku)));
+            newValue: string.Join(",", proposals.Take(50).Select(p => p.Sku)),
+            layerId: await _layers.RequireCurrentIdAsync());
 
         TempData["Message"] = $"Rejected {proposals.Count} proposal(s).";
         return RedirectToFiltered(runId, filter);
@@ -195,6 +212,7 @@ public class ProposalsController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Push(long runId, [FromForm] ProposalsFilter filter)
     {
+        if (!await RunBelongsToCurrentLayerAsync(runId)) return NotFound();
         var user = User.Identity?.Name ?? "unknown";
         var approved = await _db.ProposedPrices
             .Where(p => p.PricingRunId == runId && p.Status == ProposalStatus.Approved)
@@ -224,12 +242,14 @@ public class ProposalsController : Controller
         }
         await _db.SaveChangesAsync();
 
+        var pushLayerId = await _layers.RequireCurrentIdAsync();
         foreach (var p in approved)
         {
             await _audit.LogAsync(user, AuditCategories.Push,
                 $"Pushed price for {p.Sku}", nameof(ProposedPrice), p.Id.ToString(),
                 oldValue: p.CurrentPrice.ToString("0.00"),
-                newValue: p.ProposedPriceValue.ToString("0.00"));
+                newValue: p.ProposedPriceValue.ToString("0.00"),
+                layerId: pushLayerId);
         }
 
         TempData["Message"] = $"Pushed {approved.Count} price(s). {result.Detail}";

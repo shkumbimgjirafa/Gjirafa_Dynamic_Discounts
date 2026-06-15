@@ -13,10 +13,12 @@ public class AuditService
         string userName, string category, string action,
         string? entityType = null, string? entityId = null,
         string? oldValue = null, string? newValue = null,
+        int? layerId = null,
         CancellationToken ct = default)
     {
         _db.AuditLog.Add(new AuditLogEntry
         {
+            LayerId = layerId,
             TimestampUtc = DateTime.UtcNow,
             UserName = userName,
             Category = category,

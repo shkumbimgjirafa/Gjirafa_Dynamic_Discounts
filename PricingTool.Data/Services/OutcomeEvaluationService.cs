@@ -67,11 +67,13 @@ public class OutcomeEvaluationService
 
     private async Task<int> EvaluateCoreAsync(PricingRun run, CancellationToken ct)
     {
-        var asOf = await _db.DailySnapshots.AsNoTracking().MaxAsync(s => (DateTime?)s.SnapshotDate, ct);
+        var asOf = await _db.DailySnapshots.AsNoTracking()
+            .Where(s => s.LayerId == run.LayerId)
+            .MaxAsync(s => (DateTime?)s.SnapshotDate, ct);
         if (asOf is null) return 0;
 
         var pushedRaw = await _db.ProposedPrices.AsNoTracking()
-            .Where(p => p.Status == ProposalStatus.Pushed && p.PushedUtc != null && p.HasChange)
+            .Where(p => p.LayerId == run.LayerId && p.Status == ProposalStatus.Pushed && p.PushedUtc != null && p.HasChange)
             .Select(p => new
             {
                 p.Id, p.PricingRunId, p.Sku, p.PriceBandId,
@@ -97,7 +99,7 @@ public class OutcomeEvaluationService
 
             // "Pre" = the latest snapshot on/before D0 (the 7 days leading up to the change).
             var pre = await _db.DailySnapshots.AsNoTracking()
-                .Where(s => s.Sku == p.Sku && s.SnapshotDate <= d0)
+                .Where(s => s.LayerId == run.LayerId && s.Sku == p.Sku && s.SnapshotDate <= d0)
                 .OrderByDescending(s => s.SnapshotDate)
                 .Select(s => new SnapPoint(s.Qty7, s.Net7, s.Pptcv))
                 .FirstOrDefaultAsync(ct);
@@ -107,6 +109,7 @@ public class OutcomeEvaluationService
             {
                 outcome = new PriceChangeOutcome
                 {
+                    LayerId = run.LayerId,
                     ProposedPriceId = p.Id,
                     Sku = p.Sku,
                     SourceRunId = p.PricingRunId,
@@ -128,7 +131,7 @@ public class OutcomeEvaluationService
 
             // "Post" = the first snapshot on/after D0 + WindowDays. Null ⇒ window not matured yet.
             var post = await _db.DailySnapshots.AsNoTracking()
-                .Where(s => s.Sku == p.Sku && s.SnapshotDate >= postDate)
+                .Where(s => s.LayerId == run.LayerId && s.Sku == p.Sku && s.SnapshotDate >= postDate)
                 .OrderBy(s => s.SnapshotDate)
                 .Select(s => new SnapPoint(s.Qty7, s.Net7, s.Pptcv))
                 .FirstOrDefaultAsync(ct);
@@ -157,7 +160,7 @@ public class OutcomeEvaluationService
         {
             await _audit.LogAsync(run.TriggeredBy, AuditCategories.Run,
                 $"Evaluated {finalised} matured price-change outcome(s)",
-                nameof(PriceChangeOutcome), run.Id.ToString(), ct: ct);
+                nameof(PriceChangeOutcome), run.Id.ToString(), layerId: run.LayerId, ct: ct);
             _logger.LogInformation("Finalised {Count} price-change outcomes for run {RunId}.", finalised, run.Id);
         }
         return finalised;

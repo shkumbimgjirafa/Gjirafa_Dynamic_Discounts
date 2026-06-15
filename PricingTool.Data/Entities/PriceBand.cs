@@ -8,6 +8,10 @@ namespace PricingTool.Data.Entities;
 public class PriceBand
 {
     public int Id { get; set; }
+
+    /// <summary>The layer this band belongs to — bands are per-layer (thresholds differ by currency).</summary>
+    public int LayerId { get; set; }
+
     public string Name { get; set; } = "";
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }
