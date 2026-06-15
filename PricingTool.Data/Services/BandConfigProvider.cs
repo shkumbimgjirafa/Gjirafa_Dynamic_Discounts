@@ -34,6 +34,7 @@ public class BandConfigProvider
         }).ToList();
     }
 
-    public static PriceBandConfig? FindBand(IReadOnlyList<PriceBandConfig> bands, decimal oldPrice) =>
-        bands.FirstOrDefault(b => b.Contains(oldPrice));
+    /// <summary>Bands are keyed off PPTCV (cost), not the selling price.</summary>
+    public static PriceBandConfig? FindBand(IReadOnlyList<PriceBandConfig> bands, decimal pptcv) =>
+        bands.FirstOrDefault(b => b.Contains(pptcv));
 }

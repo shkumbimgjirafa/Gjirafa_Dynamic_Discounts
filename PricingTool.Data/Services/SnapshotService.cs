@@ -11,20 +11,26 @@ namespace PricingTool.Data.Services;
 public class SnapshotService
 {
     private readonly PricingToolDbContext _db;
+    private readonly IBulkWriteService _bulk;
 
-    public SnapshotService(PricingToolDbContext db) => _db = db;
+    public SnapshotService(PricingToolDbContext db, IBulkWriteService bulk)
+    {
+        _db = db;
+        _bulk = bulk;
+    }
 
     /// <summary>
     /// Stores one day's pull. Re-pulls on the same UTC date replace that date's snapshot
     /// (latest pull wins); proposals keep their own copy of inputs so past runs stay auditable.
+    /// Written via <see cref="BulkWriteService"/> — a full-catalog pull is ~680k rows, which EF
+    /// cannot insert in reasonable time.
     /// </summary>
     public async Task<int> SaveSnapshotAsync(
         IReadOnlyList<SnapshotRow> rows, DateTime snapshotDate, DateTime pulledAtUtc, CancellationToken ct = default)
     {
         var date = snapshotDate.Date;
 
-        var existing = await _db.DailySnapshots.Where(s => s.SnapshotDate == date).ToListAsync(ct);
-        if (existing.Count > 0) _db.DailySnapshots.RemoveRange(existing);
+        await _bulk.DeleteSnapshotsForDateAsync(date, ct);
 
         var entities = rows.Select(r => new DailySnapshot
         {
@@ -46,16 +52,8 @@ public class SnapshotService
             LaunchDateUtc = r.LaunchDateUtc,
         }).ToList();
 
-        _db.DailySnapshots.AddRange(entities);
-        var written = await _db.SaveChangesAsync(ct);
-
-        // Detach only the snapshot rows to keep the tracker small during backfills.
-        // (Never ChangeTracker.Clear() here — the orchestrator's PricingRun entity is tracked
-        // by this same context and clearing would silently drop its status updates.)
-        foreach (var entry in _db.ChangeTracker.Entries<DailySnapshot>().ToList())
-            entry.State = EntityState.Detached;
-
-        return written;
+        await _bulk.BulkInsertSnapshotsAsync(entities, ct);
+        return entities.Count;
     }
 
     /// <summary>

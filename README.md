@@ -104,7 +104,8 @@ live in `SkuOverrides`.
 2. Snapshot the full pull into `DailySnapshots` (history for the dashboard + aging signals;
    a same-day re-pull replaces that day's snapshot, and proposals keep their own copy of inputs).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
-   matches; otherwise run every band-enabled algorithm → weighted average of votes
+   matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
+   band-enabled algorithm → weighted average of votes
    (band weight × vote confidence) → **guardrail clamp** (margin floor with VAT reconciliation,
    discount ceiling, OldPrice cap) → **psychological rounding** that never violates the
    guardrails.

@@ -50,6 +50,7 @@ public static class DependencyInjection
         else
             services.AddScoped<ISourceDataReader, SqlSourceDataReader>();
 
+        services.AddScoped<IBulkWriteService, BulkWriteService>();
         services.AddScoped<SnapshotService>();
         services.AddScoped<BandConfigProvider>();
         services.AddScoped<AuditService>();

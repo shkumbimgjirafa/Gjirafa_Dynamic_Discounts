@@ -19,6 +19,44 @@ internal class FakeReader : ISourceDataReader
     public Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(CancellationToken ct = default) => Task.FromResult(_rows);
 }
 
+/// <summary>
+/// EF-backed <see cref="IBulkWriteService"/> for tests (the production one uses SqlBulkCopy, which
+/// can't target the in-memory provider). Proposals carry their votes in the navigation, so adding
+/// the proposals cascades the votes — BulkInsertVotesAsync is therefore a no-op here.
+/// </summary>
+internal class EfBulkWriter : IBulkWriteService
+{
+    private readonly PricingToolDbContext _db;
+    public EfBulkWriter(PricingToolDbContext db) => _db = db;
+
+    public async Task<long> GetMaxProposedPriceIdAsync(CancellationToken ct = default)
+        => await _db.ProposedPrices.AnyAsync(ct) ? await _db.ProposedPrices.MaxAsync(p => p.Id, ct) : 0;
+
+    public async Task DeleteSnapshotsForDateAsync(DateTime date, CancellationToken ct = default)
+    {
+        var existing = await _db.DailySnapshots.Where(s => s.SnapshotDate == date.Date).ToListAsync(ct);
+        _db.DailySnapshots.RemoveRange(existing);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public Task ReseedProposedPricesAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+    public async Task BulkInsertSnapshotsAsync(IReadOnlyCollection<DailySnapshot> rows, CancellationToken ct = default)
+    {
+        _db.DailySnapshots.AddRange(rows);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task BulkInsertProposalsAsync(IReadOnlyCollection<ProposedPrice> proposals, CancellationToken ct = default)
+    {
+        _db.ProposedPrices.AddRange(proposals);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public Task BulkInsertVotesAsync(IReadOnlyCollection<AlgorithmVoteRecord> votes, CancellationToken ct = default)
+        => Task.CompletedTask;
+}
+
 public class OrchestratorTests
 {
     private static PricingToolDbContext NewDb() =>
@@ -50,10 +88,12 @@ public class OrchestratorTests
             new DeadStockMarkdownAlgorithm(), new DiscountEffectivenessAlgorithm(),
             new VelocityMomentumAlgorithm(), new SupplierVsLocalStockAlgorithm(),
         };
+        var bulk = new EfBulkWriter(db);
         return new PricingRunOrchestrator(
             db,
             new FakeReader(rows),
-            new SnapshotService(db),
+            new SnapshotService(db, bulk),
+            bulk,
             new BandConfigProvider(db),
             new PriceCalculator(new WeightedScoringService(), new GuardrailService(), new RoundingService()),
             algorithms,
@@ -82,7 +122,7 @@ public class OrchestratorTests
             Row("SKU-OK", 100m, 80m, 40m),
             Row("SKU-NOCOST", 100m, 80m, null),      // v1 policy: skip + flag, never cost=0
             Row("SKU-NOPRICE", null, null, 40m),
-            Row("SKU-NOBAND", 600m, 550m, 100m),     // outside the 0–500 test band
+            Row("SKU-NOBAND", 600m, 550m, 600m),     // PPTCV outside the 0–500 test band (bands key off cost)
         };
 
         var returned = await NewOrchestrator(db, rows).ExecuteRunAsync("test", isOnDemand: true);
@@ -146,7 +186,7 @@ public class OrchestratorTests
     public async Task ZeroSaleStreaks_CountConsecutiveZeroQty7Days()
     {
         using var db = NewDb();
-        var snapshots = new SnapshotService(db);
+        var snapshots = new SnapshotService(db, new EfBulkWriter(db));
         var today = new DateTime(2026, 6, 12);
 
         // SKU-A: zero for the last 2 days only; SKU-B: zero all 4 days.

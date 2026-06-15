@@ -5,7 +5,7 @@ public record BandAlgorithmConfig(bool Enabled, int Weight);
 
 /// <summary>
 /// Runtime view of a price band: boundaries, guardrails, rounding and algorithm settings.
-/// A SKU belongs to the band whose [MinPrice, MaxPrice) range contains its OldPrice.
+/// A SKU belongs to the band whose [MinPrice, MaxPrice) range contains its PPTCV (cost).
 /// </summary>
 public class PriceBandConfig
 {
@@ -27,7 +27,7 @@ public class PriceBandConfig
     public IReadOnlyDictionary<string, BandAlgorithmConfig> Algorithms { get; init; } =
         new Dictionary<string, BandAlgorithmConfig>();
 
-    public bool Contains(decimal oldPrice) => oldPrice >= MinPrice && oldPrice < MaxPrice;
+    public bool Contains(decimal pptcv) => pptcv >= MinPrice && pptcv < MaxPrice;
 
     public BandAlgorithmConfig GetAlgorithm(string code) =>
         Algorithms.TryGetValue(code, out var cfg) ? cfg : new BandAlgorithmConfig(false, 0);
