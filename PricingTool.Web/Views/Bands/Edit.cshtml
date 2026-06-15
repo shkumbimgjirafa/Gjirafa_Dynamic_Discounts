@@ -1,0 +1,87 @@
+@model BandEditModel
+@{
+    ViewData["Title"] = $"Band — {Model.Name}";
+    var isManager = User.IsInRole("Manager");
+    var fieldsDisabled = isManager ? null : "disabled";
+}
+
+<h1 class="h3">@(isManager ? "Edit" : "View") band: @Model.Name</h1>
+@if (!isManager)
+{
+    <div class="alert alert-info">Read-only — the Manager role is required to edit configuration.</div>
+}
+
+<form method="post">
+    <input type="hidden" asp-for="Id" />
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <label class="form-label">Name</label>
+            <input asp-for="Name" class="form-control" disabled="@fieldsDisabled" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Min price (€, incl.)</label>
+            <input asp-for="MinPrice" type="number" step="0.01" class="form-control" disabled="@fieldsDisabled" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Max price (€, excl.)</label>
+            <input asp-for="MaxPrice" type="number" step="0.01" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="MaxPrice" class="text-danger"></span>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Margin floor %</label>
+            <input asp-for="MarginFloorPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="MarginFloorPct" class="text-danger"></span>
+            <small class="text-muted">hard min margin on net price</small>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Discount ceiling %</label>
+            <input asp-for="DiscountCeilingPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="DiscountCeilingPct" class="text-danger"></span>
+            <small class="text-muted">max off OldPrice</small>
+        </div>
+    </div>
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <label class="form-label">Psychological rounding</label>
+            <select asp-for="RoundingConvention" class="form-select" disabled="@fieldsDisabled">
+                <option value="0">None</option>
+                <option value="1">.99 endings</option>
+                <option value="2">.95 endings</option>
+                <option value="3">Whole euro</option>
+                <option value="4">995-style (€5 steps; 1000→995)</option>
+            </select>
+        </div>
+        <div class="col-md-2 form-check align-self-end mb-2 ms-3">
+            <input asp-for="RoundingEnabled" class="form-check-input" disabled="@fieldsDisabled" />
+            <label asp-for="RoundingEnabled" class="form-check-label">Rounding enabled</label>
+        </div>
+    </div>
+
+    <h5>Algorithms (weight 0–100; weight × vote confidence decides the blend)</h5>
+    <div asp-validation-summary="All" class="text-danger"></div>
+    <table class="table table-sm align-middle" style="max-width: 720px">
+        <thead class="table-light"><tr><th>Enabled</th><th>Algorithm</th><th style="width:220px">Weight</th></tr></thead>
+        <tbody>
+        @for (var i = 0; i < Model.Algorithms.Count; i++)
+        {
+            <tr>
+                <td>
+                    <input type="hidden" asp-for="Algorithms[i].Code" />
+                    <input type="hidden" asp-for="Algorithms[i].DisplayName" />
+                    <input asp-for="Algorithms[i].Enabled" class="form-check-input" disabled="@fieldsDisabled" />
+                </td>
+                <td>@Model.Algorithms[i].DisplayName <br /><small class="text-muted">@Model.Algorithms[i].Code</small></td>
+                <td>
+                    <input asp-for="Algorithms[i].Weight" type="number" min="0" max="100" class="form-control form-control-sm" disabled="@fieldsDisabled" />
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    @if (isManager)
+    {
+        <button class="btn btn-primary">Save band</button>
+    }
+    <a class="btn btn-outline-secondary" asp-action="Index">Back</a>
+</form>

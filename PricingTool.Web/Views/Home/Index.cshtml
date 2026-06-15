@@ -1,0 +1,151 @@
+@model DashboardViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Impact Dashboard";
+    var labels = JsonSerializer.Serialize(Model.Trend.Select(t => t.Date.ToString("MM-dd")));
+    var margins = JsonSerializer.Serialize(Model.Trend.Select(t => t.MarginPct));
+    var revenue = JsonSerializer.Serialize(Model.Trend.Select(t => t.NetRevenuePerDay));
+    var units = JsonSerializer.Serialize(Model.Trend.Select(t => t.UnitsPerDay));
+}
+
+<h1 class="h3">Impact Dashboard</h1>
+<p class="text-muted">Goal: hold sales volume, lift margin <strong>+@(Model.TargetMarginLiftPct)%</strong> (relative). Baseline = earliest snapshot week.</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100 @(Model.MarginLiftPct >= Model.TargetMarginLiftPct ? "border-success" : "border-warning")">
+            <div class="card-body">
+                <h6 class="text-muted">Margin lift vs baseline</h6>
+                <div class="fs-3">@(Model.MarginLiftPct?.ToString("+0.#;-0.#") ?? "–")%</div>
+                <small class="text-muted">target +@(Model.TargetMarginLiftPct)% · now @(Model.Recent?.MarginPct.ToString("0.#") ?? "–")% vs @(Model.Baseline?.MarginPct.ToString("0.#") ?? "–")%</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 @(Model.VolumeChangePct >= 0 ? "border-success" : "border-warning")">
+            <div class="card-body">
+                <h6 class="text-muted">Volume vs baseline</h6>
+                <div class="fs-3">@(Model.VolumeChangePct?.ToString("+0.#;-0.#") ?? "–")%</div>
+                <small class="text-muted">@(Model.Recent?.UnitsPerDay.ToString("0.#") ?? "–") units/day vs @(Model.Baseline?.UnitsPerDay.ToString("0.#") ?? "–")</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="text-muted">Net revenue / day (7d basis)</h6>
+                <div class="fs-3">€@(Model.Recent?.NetRevenuePerDay.ToString("N0") ?? "–")</div>
+                <small class="text-muted">baseline €@(Model.Baseline?.NetRevenuePerDay.ToString("N0") ?? "–") · excl. VAT</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 @(Model.LastRun?.Status == RunStatus.Failed || Model.FailedRunsLast7Days > 0 ? "border-danger" : "")">
+            <div class="card-body">
+                <h6 class="text-muted">Last run</h6>
+                @if (Model.LastRun is null)
+                {
+                    <div class="fs-5">No runs yet</div>
+                    <small class="text-muted">use Schedule → Run now</small>
+                }
+                else
+                {
+                    <div class="fs-5">#@Model.LastRun.Id — @Model.LastRun.Status</div>
+                    <small class="text-muted">@Model.LastRun.StartedUtc.ToString("u") · @Model.LastRun.SkuCount SKUs · @Model.LastRun.ErrorCount errors</small>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-4"><div class="card"><div class="card-body">
+        <h6>Margin % (daily, 7d window)</h6><canvas id="marginChart" height="200"></canvas>
+    </div></div></div>
+    <div class="col-lg-4"><div class="card"><div class="card-body">
+        <h6>Net revenue €/day</h6><canvas id="revenueChart" height="200"></canvas>
+    </div></div></div>
+    <div class="col-lg-4"><div class="card"><div class="card-body">
+        <h6>Units sold /day</h6><canvas id="unitsChart" height="200"></canvas>
+    </div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-5">
+        <div class="card h-100"><div class="card-body">
+            <h6>Attribution — algorithms driving changes (last run)</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Signal</th><th class="text-end">Changed SKUs</th><th class="text-end">Avg |Δ%|</th></tr></thead>
+                <tbody>
+                @foreach (var a in Model.AlgorithmAttribution)
+                {
+                    <tr><td title="@a.AlgorithmCode">@ReasonCodeText.Describe(a.AlgorithmCode)</td>
+                        <td class="text-end">@a.ChangedProposals</td>
+                        <td class="text-end">@a.AvgAbsChangePct.ToString("0.##")%</td></tr>
+                }
+                @if (!Model.AlgorithmAttribution.Any()) { <tr><td colspan="3" class="text-muted">No changed proposals yet.</td></tr> }
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100"><div class="card-body">
+            <h6>Attribution — by price band (last run)</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Band</th><th class="text-end">Changed</th><th class="text-end">Avg Δ%</th></tr></thead>
+                <tbody>
+                @foreach (var b in Model.BandAttribution)
+                {
+                    <tr><td>@b.BandName</td><td class="text-end">@b.ChangedProposals</td>
+                        <td class="text-end">@b.AvgChangePct.ToString("+0.##;-0.##")%</td></tr>
+                }
+                @if (!Model.BandAttribution.Any()) { <tr><td colspan="3" class="text-muted">No changed proposals yet.</td></tr> }
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+    <div class="col-lg-3">
+        <div class="card h-100"><div class="card-body">
+            <h6>Health flags</h6>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between">
+                    <span>Skipped — missing cost</span>
+                    <span class="badge @(Model.MissingCostSkus > 0 ? "bg-warning text-dark" : "bg-success")">@Model.MissingCostSkus</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span>SKUs at guardrail clamps</span>
+                    <span class="badge bg-secondary">@Model.GuardrailClampedSkus</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between">
+                    <span>Failed runs (7 days)</span>
+                    <span class="badge @(Model.FailedRunsLast7Days > 0 ? "bg-danger" : "bg-success")">@Model.FailedRunsLast7Days</span>
+                </li>
+            </ul>
+            @if (Model.MissingCostSampleSkus.Any())
+            {
+                <small class="text-muted d-block mt-2">Missing cost examples:
+                    @foreach (var sku in Model.MissingCostSampleSkus)
+                    {
+                        <a asp-controller="Sku" asp-action="Details" asp-route-id="@sku" class="me-1">@sku</a>
+                    }
+                </small>
+            }
+        </div></div>
+    </div>
+</div>
+
+<p class="text-muted"><small>Drill into any SKU from the Proposals page or via <code>/Sku/Details/&lt;SKU&gt;</code>.</small></p>
+
+@section Scripts {
+<script>
+    const labels = @Html.Raw(labels);
+    const mkLine = (id, data, color, fill = false) => new Chart(document.getElementById(id), {
+        type: 'line',
+        data: { labels, datasets: [{ data: @Html.Raw("data") , borderColor: color, backgroundColor: color + '33', tension: .25, fill, pointRadius: 0 }] },
+        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 10 } } } }
+    });
+    mkLine('marginChart', @Html.Raw(margins), '#198754', true);
+    mkLine('revenueChart', @Html.Raw(revenue), '#0d6efd');
+    mkLine('unitsChart', @Html.Raw(units), '#fd7e14');
+</script>
+}

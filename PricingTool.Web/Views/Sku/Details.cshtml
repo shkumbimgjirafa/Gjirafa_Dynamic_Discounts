@@ -1,0 +1,115 @@
+@model SkuDetailsViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = $"SKU {Model.Sku}";
+    var labels = JsonSerializer.Serialize(Model.History.Select(h => h.Date.ToString("MM-dd")));
+    var prices = JsonSerializer.Serialize(Model.History.Select(h => h.CurrentPrice));
+    var oldPrices = JsonSerializer.Serialize(Model.History.Select(h => h.OldPrice));
+    var qty = JsonSerializer.Serialize(Model.History.Select(h => h.Qty7));
+}
+
+<h1 class="h3">SKU drill-down: <code>@Model.Sku</code></h1>
+
+@if (Model.Latest is not null)
+{
+    <dl class="row mb-4">
+        <dt class="col-sm-2">Latest snapshot</dt><dd class="col-sm-10">@Model.Latest.SnapshotDate.ToString("yyyy-MM-dd")</dd>
+        <dt class="col-sm-2">Prices</dt>
+        <dd class="col-sm-10">Old €@(Model.Latest.OldPrice?.ToString("0.00") ?? "–") · Current €@(Model.Latest.CurrentPrice?.ToString("0.00") ?? "–")
+            · Discount @(Model.Latest.CurrentDiscountPct?.ToString("P1") ?? "–")</dd>
+        <dt class="col-sm-2">Cost / margin</dt>
+        <dd class="col-sm-10">PPTCV @(Model.Latest.Pptcv?.ToString("0.00") ?? "NULL ⚠") · GrossMargin @(Model.Latest.GrossMargin?.ToString("0.##") ?? "NULL")%</dd>
+        <dt class="col-sm-2">Stock</dt>
+        <dd class="col-sm-10">Kosovo @Model.Latest.KsWarehouseStock · Supplier @Model.Latest.SupplierWarehouseStock</dd>
+        <dt class="col-sm-2">Sales (7/30/90d)</dt>
+        <dd class="col-sm-10">@Model.Latest.Qty7 / @Model.Latest.Qty30 / @Model.Latest.Qty90 units ·
+            €@Model.Latest.Net7.ToString("0.00") / €@Model.Latest.Net30.ToString("0.00") / €@Model.Latest.Net90.ToString("0.00") net (excl. VAT)</dd>
+    </dl>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-7"><div class="card"><div class="card-body">
+        <h6>Price history (snapshots)</h6><canvas id="priceChart" height="190"></canvas>
+    </div></div></div>
+    <div class="col-lg-5"><div class="card"><div class="card-body">
+        <h6>7d trailing units sold — sales response after changes</h6><canvas id="qtyChart" height="190"></canvas>
+    </div></div></div>
+</div>
+
+<h5>Run-by-run decisions</h5>
+@foreach (var item in Model.Proposals)
+{
+    <div class="card mb-2">
+        <div class="card-header py-1 d-flex justify-content-between">
+            <span>Run <a asp-controller="Proposals" asp-action="Index" asp-route-runId="@item.Run.Id">#@item.Run.Id</a>
+                — @item.Run.StartedUtc.ToString("u")</span>
+            <span>
+                €@item.Proposal.CurrentPrice.ToString("0.00") → <strong>€@item.Proposal.ProposedPriceValue.ToString("0.00")</strong>
+                (@item.Proposal.ChangePct.ToString("+0.##;-0.##;0")%)
+                <span class="badge @(item.Proposal.Status switch {
+                    ProposalStatus.Approved => "bg-success", ProposalStatus.Rejected => "bg-danger",
+                    ProposalStatus.Pushed => "bg-primary", ProposalStatus.Skipped => "bg-warning text-dark",
+                    _ => "bg-secondary" })">@item.Proposal.Status</span>
+            </span>
+        </div>
+        <div class="card-body py-2">
+            @if (item.Proposal.Status == ProposalStatus.Skipped)
+            {
+                <small class="text-muted">Skipped: @ReasonCodeText.Describe(item.Proposal.SkipReason ?? "")</small>
+            }
+            else if (item.Proposal.Votes.Any())
+            {
+                <table class="table table-sm mb-1">
+                    <thead><tr><th>Algorithm</th><th class="text-end">Suggested €</th><th class="text-end">Confidence</th>
+                        <th class="text-end">Weight</th><th class="text-end">Effective</th><th>Reason</th></tr></thead>
+                    <tbody>
+                    @foreach (var vote in item.Proposal.Votes.OrderByDescending(v => v.EffectiveWeight))
+                    {
+                        <tr>
+                            <td><small>@vote.AlgorithmCode</small></td>
+                            <td class="text-end">@vote.SuggestedPrice.ToString("0.00")</td>
+                            <td class="text-end">@vote.Confidence.ToString("0.00")</td>
+                            <td class="text-end">@vote.BandWeight</td>
+                            <td class="text-end">@vote.EffectiveWeight.ToString("0.#")</td>
+                            <td><small>@vote.ReasonText</small></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+                @if (item.Proposal.GuardrailFlags.Length > 0)
+                {
+                    <small>Guardrails:
+                        @foreach (var (code, text) in ReasonCodeText.DescribeList(item.Proposal.GuardrailFlags))
+                        {
+                            <span class="badge bg-secondary" title="@code">@text</span>
+                        }
+                    </small>
+                }
+            }
+            else
+            {
+                <small class="text-muted">No algorithm voted — price unchanged.</small>
+            }
+        </div>
+    </div>
+}
+@if (!Model.Proposals.Any()) { <p class="text-muted">No pricing decisions recorded for this SKU yet.</p> }
+
+@section Scripts {
+<script>
+    const labels = @Html.Raw(labels);
+    new Chart(document.getElementById('priceChart'), {
+        type: 'line',
+        data: { labels, datasets: [
+            { label: 'Current €', data: @Html.Raw(prices), borderColor: '#0d6efd', tension: .2, pointRadius: 0 },
+            { label: 'Old (shelf) €', data: @Html.Raw(oldPrices), borderColor: '#adb5bd', borderDash: [6, 4], tension: .2, pointRadius: 0 }
+        ]},
+        options: { scales: { x: { ticks: { maxTicksLimit: 12 } } } }
+    });
+    new Chart(document.getElementById('qtyChart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Units (7d trailing)', data: @Html.Raw(qty), backgroundColor: '#fd7e1488' }] },
+        options: { scales: { x: { ticks: { maxTicksLimit: 12 } } } }
+    });
+</script>
+}

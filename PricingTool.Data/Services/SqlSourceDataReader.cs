@@ -1,0 +1,101 @@
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using PricingTool.Core.Abstractions;
+using PricingTool.Core.Domain;
+
+namespace PricingTool.Data.Services;
+
+/// <summary>
+/// Pulls the daily dataset over the READ-ONLY source connection ("SourceReadOnly" connection
+/// string). Prefers the deployed stored procedure; set SourceDataset:Mode=InlineQuery to run
+/// the (corrected) query verbatim when a stored proc can't be created.
+/// </summary>
+public class SqlSourceDataReader : ISourceDataReader
+{
+    private readonly string _connectionString;
+    private readonly bool _useStoredProcedure;
+    private readonly ILogger<SqlSourceDataReader> _logger;
+
+    public SqlSourceDataReader(IConfiguration config, ILogger<SqlSourceDataReader> logger)
+    {
+        _connectionString = config.GetConnectionString("SourceReadOnly")
+            ?? throw new InvalidOperationException("Missing connection string 'SourceReadOnly'.");
+        _useStoredProcedure = !string.Equals(
+            config["SourceDataset:Mode"], "InlineQuery", StringComparison.OrdinalIgnoreCase);
+        _logger = logger;
+    }
+
+    public async Task<IReadOnlyList<SnapshotRow>> GetDailyDatasetAsync(CancellationToken ct = default)
+    {
+        var rows = new List<SnapshotRow>();
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(ct);
+
+        await using var command = connection.CreateCommand();
+        command.CommandTimeout = 600;
+        if (_useStoredProcedure)
+        {
+            command.CommandType = System.Data.CommandType.StoredProcedure;
+            command.CommandText = SourceQueries.StoredProcedureName;
+        }
+        else
+        {
+            command.CommandType = System.Data.CommandType.Text;
+            command.CommandText = SourceQueries.DailyDatasetInline;
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+
+        static decimal? Dec(SqlDataReader r, string col)
+        {
+            var i = r.GetOrdinal(col);
+            return r.IsDBNull(i) ? null : Convert.ToDecimal(r.GetValue(i));
+        }
+        static decimal Dec0(SqlDataReader r, string col) => Dec(r, col) ?? 0m;
+        static int Int0(SqlDataReader r, string col)
+        {
+            var i = r.GetOrdinal(col);
+            return r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i));
+        }
+
+        while (await reader.ReadAsync(ct))
+        {
+            var skuOrdinal = reader.GetOrdinal("Sku");
+            if (reader.IsDBNull(skuOrdinal)) continue;
+
+            rows.Add(new SnapshotRow
+            {
+                Sku = reader.GetString(skuOrdinal).Trim(),
+                OldPrice = Dec(reader, "OldPrice"),
+                CurrentPrice = Dec(reader, "CurrentPrice"),
+                CurrentDiscountPct = Dec(reader, "CurrentDiscountPct"),
+                Pptcv = Dec(reader, "PPTCV"),
+                GrossMargin = Dec(reader, "GrossMargin"),
+                KsWarehouseStock = Int0(reader, "KS_WarehouseStock"),
+                SupplierWarehouseStock = Int0(reader, "Supplier_WarehouseStock"),
+                Qty7 = Int0(reader, "7d_qty"),
+                Net7 = Dec0(reader, "7d_net"),
+                Disc7 = Dec(reader, "7d_avg_discount_pct"),
+                Qty14 = Int0(reader, "14d_qty"),
+                Net14 = Dec0(reader, "14d_net"),
+                Disc14 = Dec(reader, "14d_avg_discount_pct"),
+                Qty30 = Int0(reader, "30d_qty"),
+                Net30 = Dec0(reader, "30d_net"),
+                Disc30 = Dec(reader, "30d_avg_discount_pct"),
+                Qty60 = Int0(reader, "60d_qty"),
+                Net60 = Dec0(reader, "60d_net"),
+                Disc60 = Dec(reader, "60d_avg_discount_pct"),
+                Qty90 = Int0(reader, "90d_qty"),
+                Net90 = Dec0(reader, "90d_net"),
+                Disc90 = Dec(reader, "90d_avg_discount_pct"),
+                LaunchDateUtc = null, // not present in the v1 dataset (open decision #2)
+            });
+        }
+
+        _logger.LogInformation("Pulled {Count} SKUs from the source dataset ({Mode}).",
+            rows.Count, _useStoredProcedure ? "stored procedure" : "inline query");
+        return rows;
+    }
+}

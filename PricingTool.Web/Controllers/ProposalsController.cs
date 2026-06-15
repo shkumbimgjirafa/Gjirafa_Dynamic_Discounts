@@ -1,0 +1,250 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using PricingTool.Core.Abstractions;
+using PricingTool.Core.Algorithms;
+using PricingTool.Core.Options;
+using PricingTool.Data;
+using PricingTool.Data.Entities;
+using PricingTool.Data.Services;
+using PricingTool.Web.Models;
+
+namespace PricingTool.Web.Controllers;
+
+[Authorize(Roles = "Analyst,Manager")]
+public class ProposalsController : Controller
+{
+    private readonly PricingToolDbContext _db;
+    private readonly AuditService _audit;
+    private readonly IPricePushService _pushService;
+    private readonly PricingEngineOptions _options;
+
+    public ProposalsController(
+        PricingToolDbContext db, AuditService audit, IPricePushService pushService,
+        IOptions<PricingEngineOptions> options)
+    {
+        _db = db;
+        _audit = audit;
+        _pushService = pushService;
+        _options = options.Value;
+    }
+
+    public async Task<IActionResult> Index([FromQuery] ProposalsFilter filter)
+    {
+        var model = new ProposalsViewModel
+        {
+            Filter = filter,
+            ConfirmationThresholdPct = _options.ChangeConfirmationThresholdPct,
+            Bands = await _db.PriceBands.OrderBy(b => b.SortOrder).ToListAsync(),
+            AlgorithmCodes = AlgorithmCodes.All.Select(a => a.Code).ToList(),
+            RecentRuns = await _db.PricingRuns.OrderByDescending(r => r.Id).Take(15).ToListAsync(),
+        };
+
+        var run = filter.RunId.HasValue
+            ? await _db.PricingRuns.FindAsync(filter.RunId.Value)
+            : await _db.PricingRuns.Where(r => r.Status != RunStatus.Running)
+                .OrderByDescending(r => r.Id).FirstOrDefaultAsync();
+        if (run is null) return View(model);
+        model.Run = run;
+        model.Filter.RunId = run.Id;
+
+        var query = BuildFilteredQuery(model.Filter);
+
+        model.TotalCount = await query.CountAsync();
+        model.ApprovedCount = await _db.ProposedPrices
+            .CountAsync(p => p.PricingRunId == run.Id && p.Status == ProposalStatus.Approved);
+
+        query = filter.Sort switch
+        {
+            "change_asc" => query.OrderBy(p => p.ChangePct),
+            "sku" => query.OrderBy(p => p.Sku),
+            "price_desc" => query.OrderByDescending(p => p.ProposedPriceValue),
+            _ => query.OrderByDescending(p => Math.Abs(p.ChangePct)),
+        };
+
+        model.Proposals = await query.Take(500).ToListAsync();
+        return View(model);
+    }
+
+    private IQueryable<ProposedPrice> BuildFilteredQuery(ProposalsFilter filter)
+    {
+        var query = _db.ProposedPrices.AsQueryable()
+            .Where(p => p.PricingRunId == filter.RunId);
+
+        if (Enum.TryParse<ProposalStatus>(filter.Status, out var status))
+            query = query.Where(p => p.Status == status);
+
+        if (filter.BandId.HasValue)
+            query = query.Where(p => p.PriceBandId == filter.BandId);
+
+        if (!string.IsNullOrEmpty(filter.Algorithm))
+            query = query.Where(p => p.ReasonCodes.Contains(filter.Algorithm) ||
+                                     p.Votes.Any(v => v.AlgorithmCode == filter.Algorithm));
+
+        if (filter.MinAbsChangePct.HasValue)
+            query = query.Where(p => Math.Abs(p.ChangePct) >= filter.MinAbsChangePct.Value);
+
+        if (filter.ChangedOnly && filter.Status == "Pending")
+            query = query.Where(p => p.HasChange);
+
+        return query;
+    }
+
+    // ---- Review actions (Manager only) ------------------------------------
+
+    [HttpPost]
+    [Authorize(Roles = "Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(long runId, long[] ids, bool confirmLarge, [FromForm] ProposalsFilter filter)
+    {
+        if (ids.Length == 0)
+        {
+            TempData["Error"] = "No proposals selected.";
+            return RedirectToFiltered(runId, filter);
+        }
+
+        var proposals = await _db.ProposedPrices
+            .Where(p => p.PricingRunId == runId && ids.Contains(p.Id) && p.Status == ProposalStatus.Pending)
+            .ToListAsync();
+
+        return await ApproveCore(proposals, runId, confirmLarge, filter);
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ApproveAll(long runId, bool confirmLarge, [FromForm] ProposalsFilter filter)
+    {
+        filter.RunId = runId;
+        filter.Status = "Pending";
+        var proposals = await BuildFilteredQuery(filter).ToListAsync();
+        return await ApproveCore(proposals, runId, confirmLarge, filter);
+    }
+
+    private async Task<IActionResult> ApproveCore(
+        List<ProposedPrice> proposals, long runId, bool confirmLarge, ProposalsFilter filter)
+    {
+        if (proposals.Count == 0)
+        {
+            TempData["Error"] = "Nothing to approve in the current selection.";
+            return RedirectToFiltered(runId, filter);
+        }
+
+        // Server-side enforcement of the large-change confirmation threshold (default ±20%).
+        var threshold = _options.ChangeConfirmationThresholdPct;
+        var large = proposals.Where(p => Math.Abs(p.ChangePct) > threshold).ToList();
+        if (large.Count > 0 && !confirmLarge)
+        {
+            TempData["Error"] =
+                $"{large.Count} selected proposal(s) exceed ±{threshold:0.#}% — tick “confirm large changes” to approve them.";
+            return RedirectToFiltered(runId, filter);
+        }
+
+        var user = User.Identity?.Name ?? "unknown";
+        foreach (var p in proposals)
+        {
+            p.Status = ProposalStatus.Approved;
+            p.ReviewedBy = user;
+            p.ReviewedUtc = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(user, AuditCategories.Review,
+            $"Approved {proposals.Count} proposal(s)", nameof(PricingRun), runId.ToString(),
+            newValue: string.Join(",", proposals.Take(50).Select(p => p.Sku)));
+
+        TempData["Message"] = $"Approved {proposals.Count} proposal(s).";
+        return RedirectToFiltered(runId, filter);
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Reject(long runId, long[] ids, [FromForm] ProposalsFilter filter)
+    {
+        var user = User.Identity?.Name ?? "unknown";
+        var proposals = await _db.ProposedPrices
+            .Where(p => p.PricingRunId == runId && ids.Contains(p.Id) &&
+                        (p.Status == ProposalStatus.Pending || p.Status == ProposalStatus.Approved))
+            .ToListAsync();
+
+        foreach (var p in proposals)
+        {
+            p.Status = ProposalStatus.Rejected;
+            p.ReviewedBy = user;
+            p.ReviewedUtc = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync();
+
+        await _audit.LogAsync(user, AuditCategories.Review,
+            $"Rejected {proposals.Count} proposal(s)", nameof(PricingRun), runId.ToString(),
+            newValue: string.Join(",", proposals.Take(50).Select(p => p.Sku)));
+
+        TempData["Message"] = $"Rejected {proposals.Count} proposal(s).";
+        return RedirectToFiltered(runId, filter);
+    }
+
+    /// <summary>
+    /// The explicit, human-triggered push step: hands every Approved proposal of the run to the
+    /// IPricePushService integration point (v1: CSV export) and marks them Pushed. This is the
+    /// ONLY path that leaves the tool — the engine itself never touches live prices.
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Push(long runId, [FromForm] ProposalsFilter filter)
+    {
+        var user = User.Identity?.Name ?? "unknown";
+        var approved = await _db.ProposedPrices
+            .Where(p => p.PricingRunId == runId && p.Status == ProposalStatus.Approved)
+            .ToListAsync();
+
+        if (approved.Count == 0)
+        {
+            TempData["Error"] = "No approved proposals to push.";
+            return RedirectToFiltered(runId, filter);
+        }
+
+        var payload = approved
+            .Select(p => new ApprovedPrice(p.Id, p.Sku, p.OldPrice, p.CurrentPrice, p.ProposedPriceValue, runId, p.ReviewedBy ?? user))
+            .ToList();
+
+        var result = await _pushService.PushAsync(payload);
+        if (!result.Success)
+        {
+            TempData["Error"] = $"Push failed: {result.Detail}";
+            return RedirectToFiltered(runId, filter);
+        }
+
+        foreach (var p in approved)
+        {
+            p.Status = ProposalStatus.Pushed;
+            p.PushedUtc = DateTime.UtcNow;
+        }
+        await _db.SaveChangesAsync();
+
+        foreach (var p in approved)
+        {
+            await _audit.LogAsync(user, AuditCategories.Push,
+                $"Pushed price for {p.Sku}", nameof(ProposedPrice), p.Id.ToString(),
+                oldValue: p.CurrentPrice.ToString("0.00"),
+                newValue: p.ProposedPriceValue.ToString("0.00"));
+        }
+
+        TempData["Message"] = $"Pushed {approved.Count} price(s). {result.Detail}";
+        return RedirectToFiltered(runId, filter);
+    }
+
+    private IActionResult RedirectToFiltered(long runId, ProposalsFilter filter) =>
+        RedirectToAction(nameof(Index), new
+        {
+            RunId = runId,
+            filter.BandId,
+            filter.Algorithm,
+            filter.MinAbsChangePct,
+            filter.Status,
+            filter.ChangedOnly,
+            filter.Sort,
+        });
+}
