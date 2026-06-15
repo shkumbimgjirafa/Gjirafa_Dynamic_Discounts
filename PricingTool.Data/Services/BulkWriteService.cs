@@ -44,6 +44,7 @@ public class BulkWriteService : IBulkWriteService
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
+        cmd.CommandTimeout = CopyTimeoutSeconds;
         cmd.CommandText = "SELECT ISNULL(MAX(Id), 0) FROM [PricingTool].[ProposedPrices]";
         return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
     }
@@ -53,8 +54,17 @@ public class BulkWriteService : IBulkWriteService
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
+        cmd.CommandTimeout = CopyTimeoutSeconds; // a full-catalog same-date replace deletes ~680k rows
         // Scoped by LayerId: a same-day re-pull of one layer must not wipe another layer's snapshots.
-        cmd.CommandText = "DELETE FROM [PricingTool].[DailySnapshots] WHERE [LayerId] = @layer AND [SnapshotDate] = @d";
+        // Batched so the delete doesn't run as one giant transaction (which timed out / bloated the log).
+        cmd.CommandText = @"
+DECLARE @rows int = 1;
+WHILE @rows > 0
+BEGIN
+    DELETE TOP (50000) FROM [PricingTool].[DailySnapshots]
+    WHERE [LayerId] = @layer AND [SnapshotDate] = @d;
+    SET @rows = @@ROWCOUNT;
+END";
         var pl = cmd.CreateParameter();
         pl.ParameterName = "@layer";
         pl.DbType = DbType.Int32;
@@ -74,6 +84,7 @@ public class BulkWriteService : IBulkWriteService
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
+        cmd.CommandTimeout = CopyTimeoutSeconds;
         // RESEED with no explicit value sets the seed to the current MAX(Id); the next insert is MAX+1.
         cmd.CommandText = "DBCC CHECKIDENT('[PricingTool].[ProposedPrices]', RESEED)";
         await cmd.ExecuteNonQueryAsync(ct);

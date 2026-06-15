@@ -67,6 +67,13 @@ public class PricingRunOrchestrator
     /// </summary>
     public async Task<PricingRun> ExecuteRunAsync(string triggeredBy, bool isOnDemand, int layerId, CancellationToken ct = default)
     {
+        // A full-catalog run reads/writes hundreds of thousands of rows (snapshot history, zero-sale
+        // streaks, outcome evaluation); the default 30s command timeout isn't enough. This DbContext
+        // is scoped to the run, so the longer timeout never affects the web UI's queries.
+        // (Guarded: SetCommandTimeout is relational-only — the in-memory test provider rejects it.)
+        if (_db.Database.IsRelational())
+            _db.Database.SetCommandTimeout(600);
+
         await FailStaleRunsAsync(ct);
 
         var layer = await _db.Layers.AsNoTracking().FirstOrDefaultAsync(l => l.Id == layerId && l.IsActive, ct)
