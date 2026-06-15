@@ -88,9 +88,14 @@ public static class DbSeeder
         {
             if (await db.PriceBands.AnyAsync(b => b.LayerId == layer.Id, ct)) continue;
 
+            // EUR layers use the per-band charm conventions (.99/.95/whole/995). Currencies with no
+            // minor unit (MKD, ALL) can't use those — they round to whole-currency …99 instead.
+            var nonEur = !string.Equals(layer.Currency, "EUR", StringComparison.OrdinalIgnoreCase);
+
             var sort = 0;
             foreach (var seed in BandSeeds)
             {
+                var rounding = nonEur ? RoundingConvention.EndsIn99Hundreds : seed.Rounding;
                 var band = new PriceBand
                 {
                     LayerId = layer.Id,
@@ -99,7 +104,7 @@ public static class DbSeeder
                     MaxPrice = seed.Max,
                     MarginFloorPct = seed.MarginFloor,
                     DiscountCeilingPct = seed.DiscountCeiling,
-                    RoundingConvention = (int)seed.Rounding,
+                    RoundingConvention = (int)rounding,
                     RoundingEnabled = true,
                     SortOrder = sort++,
                 };

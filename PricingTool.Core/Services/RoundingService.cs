@@ -41,6 +41,7 @@ public class RoundingService
         RoundingConvention.EndsIn95 => EndingDown(price, 0.95m),
         RoundingConvention.WholeEuro => Math.Floor(price),
         RoundingConvention.Charm995 => Charm995Down(price),
+        RoundingConvention.EndsIn99Hundreds => Hundreds99Down(price),
         _ => price,
     };
 
@@ -51,6 +52,7 @@ public class RoundingService
         RoundingConvention.EndsIn95 => EndingUp(price, 0.95m),
         RoundingConvention.WholeEuro => Math.Ceiling(price),
         RoundingConvention.Charm995 => Charm995Up(price),
+        RoundingConvention.EndsIn99Hundreds => Hundreds99Up(price),
         _ => price,
     };
 
@@ -83,6 +85,20 @@ public class RoundingService
             if (below >= price) return below;
         }
         return candidate;
+    }
+
+    /// <summary>Largest whole-currency price ending in 99 (…99) that is ≤ input. e.g. 6149 -> 6099.</summary>
+    private static decimal Hundreds99Down(decimal price)
+    {
+        var candidate = Math.Floor(price / 100m) * 100m + 99m;
+        return candidate <= price ? candidate : candidate - 100m;
+    }
+
+    /// <summary>Smallest whole-currency price ending in 99 (…99) that is ≥ input. e.g. 9990 -> 9999.</summary>
+    private static decimal Hundreds99Up(decimal price)
+    {
+        var candidate = Math.Floor(price / 100m) * 100m + 99m;
+        return candidate >= price ? candidate : candidate + 100m;
     }
 
     /// <summary>Round to 2 decimals without leaving the guardrail bounds.</summary>

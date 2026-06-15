@@ -19,4 +19,10 @@ public enum RoundingConvention
     /// Intended for the EUR 1,000+ bands.
     /// </summary>
     Charm995 = 4,
+
+    /// <summary>
+    /// Whole-currency prices whose last two digits are 99 (e.g. 6199, 9999). For currencies with no
+    /// minor unit / large nominal values (MKD, ALL) where the .99/.95 EUR conventions don't apply.
+    /// </summary>
+    EndsIn99Hundreds = 5,
 }

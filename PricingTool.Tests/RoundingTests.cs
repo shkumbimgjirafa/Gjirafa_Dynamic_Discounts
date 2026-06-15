@@ -76,6 +76,30 @@ public class RoundingTests
         Assert.Equal(120m, result.Price);
     }
 
+    [Theory]
+    [InlineData(6149, 6099)]  // largest …99 at or below
+    [InlineData(6199, 6199)]
+    [InlineData(99, 99)]
+    public void EndsIn99Hundreds_RoundDown(decimal input, decimal expected)
+        => Assert.Equal(expected, RoundingService.RoundDown(input, RoundingConvention.EndsIn99Hundreds));
+
+    [Theory]
+    [InlineData(9990, 9999)]  // smallest …99 at or above
+    [InlineData(9899, 9899)]
+    [InlineData(6100, 6199)]
+    public void EndsIn99Hundreds_RoundUp(decimal input, decimal expected)
+        => Assert.Equal(expected, RoundingService.RoundUp(input, RoundingConvention.EndsIn99Hundreds));
+
+    [Theory]
+    [InlineData(9990, 9999)]  // up (dist 9) beats down 9899 (dist 91) — MKD/ALL charm pricing
+    [InlineData(6149, 6099)]  // 6099 vs 6199 tie → lower wins
+    public void EndsIn99Hundreds_Apply_PicksClosest(decimal input, decimal expected)
+    {
+        var result = _rounding.Apply(input, RoundingConvention.EndsIn99Hundreds, Wide);
+        Assert.Equal(expected, result.Price);
+        Assert.True(result.RoundingApplied);
+    }
+
     [Fact]
     public void None_NormalizesToTwoDecimals()
     {
@@ -91,7 +115,8 @@ public class RoundingTests
         var conventions = new[]
         {
             RoundingConvention.EndsIn99, RoundingConvention.EndsIn95,
-            RoundingConvention.WholeEuro, RoundingConvention.Charm995, RoundingConvention.None,
+            RoundingConvention.WholeEuro, RoundingConvention.Charm995,
+            RoundingConvention.EndsIn99Hundreds, RoundingConvention.None,
         };
         var prices = new[] { 3.10m, 9.99m, 47.31m, 99.50m, 250.77m, 999.99m, 1003.21m, 4321.99m };
 
