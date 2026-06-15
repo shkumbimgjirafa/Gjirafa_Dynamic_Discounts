@@ -50,7 +50,8 @@ FROM {opDb}.dbo.Product p
 INNER JOIN #vendors v ON v.Id = p.VendorId
 INNER JOIN {opDb}.dbo.ProductWarehouseInventory pwi ON pwi.ProductId = p.Id
 INNER JOIN {opDb}.dbo.Warehouse w ON w.Id = pwi.WarehouseId
-WHERE (@ExcludeUnpublished = 0
+WHERE ISNULL(p.IsOutlet, 0) = 0   -- outlets are priced by a separate system; never include them
+  AND (@ExcludeUnpublished = 0
        OR p.UnpublishedStoreids IS NULL
        OR p.UnpublishedStoreids NOT LIKE '%' + @storeIdStr + '%')
 GROUP BY p.Id, p.Sku
