@@ -28,6 +28,7 @@ public class PricingRunOrchestrator
     private readonly PriceCalculator _calculator;
     private readonly IEnumerable<IPricingAlgorithm> _algorithms;
     private readonly AuditService _audit;
+    private readonly OutcomeEvaluationService _outcomes;
     private readonly PricingEngineOptions _options;
     private readonly ILogger<PricingRunOrchestrator> _logger;
 
@@ -39,6 +40,7 @@ public class PricingRunOrchestrator
         PriceCalculator calculator,
         IEnumerable<IPricingAlgorithm> algorithms,
         AuditService audit,
+        OutcomeEvaluationService outcomes,
         IOptions<PricingEngineOptions> options,
         ILogger<PricingRunOrchestrator> logger)
     {
@@ -49,6 +51,7 @@ public class PricingRunOrchestrator
         _calculator = calculator;
         _algorithms = algorithms;
         _audit = audit;
+        _outcomes = outcomes;
         _options = options.Value;
         _logger = logger;
     }
@@ -111,6 +114,7 @@ public class PricingRunOrchestrator
                 if (++pendingSinceLastSave >= SaveBatchSize)
                 {
                     await _db.SaveChangesAsync(ct);
+                    DetachWrittenProposals();
                     pendingSinceLastSave = 0;
                 }
             }
@@ -118,10 +122,21 @@ public class PricingRunOrchestrator
             run.FinishedUtc = DateTime.UtcNow;
             run.Status = run.ErrorCount == 0 ? RunStatus.Succeeded : RunStatus.SucceededWithErrors;
             await _db.SaveChangesAsync(ct);
+            DetachWrittenProposals();
 
             await _audit.LogAsync(triggeredBy, AuditCategories.Run,
                 $"Run finished: {run.Status}", nameof(PricingRun), run.Id.ToString(),
                 newValue: $"SKUs={run.SkuCount}, proposals={run.ProposalCount}, skipped={run.SkippedCount}, errors={run.ErrorCount}", ct: ct);
+
+            // Grade matured price-change outcomes. Never let this fail an otherwise-successful run.
+            try
+            {
+                await _outcomes.EvaluateAsync(run, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Outcome evaluation failed after run {RunId} (run still succeeded).", run.Id);
+            }
 
             _logger.LogInformation(
                 "Pricing run {RunId} finished: {SkuCount} SKUs, {Proposals} proposals, {Skipped} skipped, {Errors} errors.",
@@ -216,6 +231,19 @@ public class PricingRunOrchestrator
         }
 
         return proposal;
+    }
+
+    /// <summary>
+    /// Detaches already-saved proposals and their votes after each batch so the change tracker
+    /// stays small across a full-catalog run (~680k SKUs). The PricingRun entity is intentionally
+    /// left tracked so its running status/counters keep flushing on subsequent saves.
+    /// </summary>
+    private void DetachWrittenProposals()
+    {
+        foreach (var entry in _db.ChangeTracker.Entries<AlgorithmVoteRecord>().ToList())
+            entry.State = EntityState.Detached;
+        foreach (var entry in _db.ChangeTracker.Entries<ProposedPrice>().ToList())
+            entry.State = EntityState.Detached;
     }
 
     private static ProposedPrice Skip(SnapshotRow row, string reason) => new()

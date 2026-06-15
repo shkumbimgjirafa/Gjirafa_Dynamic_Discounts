@@ -12,6 +12,14 @@ public record AlgorithmAttribution(string AlgorithmCode, int ChangedProposals, d
 
 public record BandAttribution(string BandName, int ChangedProposals, decimal AvgChangePct);
 
+public record OutcomeSummary(
+    ChangeIntent Intent, int Total, int Wins, int Neutrals, int Backfires,
+    decimal WinRatePct, decimal AvgDeltaUnitsPerDay, decimal? AvgDeltaGrossProfitPerDay);
+
+public record OutcomeRow(
+    string Sku, ChangeIntent Intent, OutcomeVerdict Verdict,
+    decimal DeltaUnitsPerDay, decimal DeltaGrossProfitPerDay);
+
 public class DashboardViewModel
 {
     public List<DailyKpi> Trend { get; set; } = new();
@@ -23,6 +31,11 @@ public class DashboardViewModel
 
     public List<AlgorithmAttribution> AlgorithmAttribution { get; set; } = new();
     public List<BandAttribution> BandAttribution { get; set; } = new();
+
+    public List<OutcomeSummary> OutcomeSummaries { get; set; } = new();
+    public List<OutcomeRow> TopWins { get; set; } = new();
+    public List<OutcomeRow> WorstBackfires { get; set; } = new();
+    public int MaturedOutcomeCount { get; set; }
 
     public PricingRun? LastRun { get; set; }
     public int MissingCostSkus { get; set; }

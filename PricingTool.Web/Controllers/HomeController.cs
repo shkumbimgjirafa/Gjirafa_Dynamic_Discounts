@@ -100,6 +100,59 @@ public class HomeController : Controller
         model.FailedRunsLast7Days = await _db.PricingRuns
             .CountAsync(r => r.Status == RunStatus.Failed && r.StartedUtc >= DateTime.UtcNow.AddDays(-7));
 
+        // ---- "Did the bet pay off?" — realized impact of pushed changes, judged by intent.
+        // Materialize first, then compute deltas + group in memory (matches the attribution idiom).
+        var maturedRaw = await _db.PriceChangeOutcomes
+            .Where(o => o.Verdict != OutcomeVerdict.Pending)
+            .Select(o => new { o.Sku, o.Intent, o.Verdict, o.PreUnitsPerDay, o.PostUnitsPerDay, o.PreGrossProfitPerDay, o.PostGrossProfitPerDay })
+            .ToListAsync();
+
+        var matured = maturedRaw.Select(o => new
+        {
+            o.Sku,
+            o.Intent,
+            o.Verdict,
+            DeltaUnits = (o.PostUnitsPerDay ?? o.PreUnitsPerDay) - o.PreUnitsPerDay,
+            // Profit delta only when BOTH sides are measurable — never coalesce a missing cost to 0,
+            // which would fabricate a full-profit "delta" and skew the tile average / wins ordering.
+            DeltaGp = (o.PreGrossProfitPerDay is decimal pre && o.PostGrossProfitPerDay is decimal post)
+                ? (decimal?)(post - pre)
+                : null,
+        }).ToList();
+
+        model.MaturedOutcomeCount = matured.Count;
+
+        model.OutcomeSummaries = Enum.GetValues<ChangeIntent>()
+            .Select(intent =>
+            {
+                var rows = matured.Where(x => x.Intent == intent).ToList();
+                var total = rows.Count;
+                var wins = rows.Count(x => x.Verdict == OutcomeVerdict.Win);
+                var gp = rows.Where(x => x.DeltaGp != null).Select(x => x.DeltaGp!.Value).ToList();
+                return new OutcomeSummary(
+                    intent, total, wins,
+                    rows.Count(x => x.Verdict == OutcomeVerdict.Neutral),
+                    rows.Count(x => x.Verdict == OutcomeVerdict.Backfire),
+                    Math.Round(total > 0 ? (decimal)wins / total * 100m : 0m, 0),
+                    Math.Round(total > 0 ? rows.Average(x => x.DeltaUnits) : 0m, 1),
+                    gp.Count > 0 ? Math.Round(gp.Average(), 2) : (decimal?)null);
+            })
+            .ToList();
+
+        model.TopWins = matured
+            .Where(o => o.Verdict == OutcomeVerdict.Win && o.DeltaGp != null)
+            .OrderByDescending(o => o.DeltaGp!.Value)
+            .Take(8)
+            .Select(o => new OutcomeRow(o.Sku, o.Intent, o.Verdict, Math.Round(o.DeltaUnits, 1), Math.Round(o.DeltaGp!.Value, 2)))
+            .ToList();
+
+        model.WorstBackfires = matured
+            .Where(o => o.Verdict == OutcomeVerdict.Backfire && o.DeltaGp != null)
+            .OrderBy(o => o.DeltaGp!.Value)
+            .Take(8)
+            .Select(o => new OutcomeRow(o.Sku, o.Intent, o.Verdict, Math.Round(o.DeltaUnits, 1), Math.Round(o.DeltaGp!.Value, 2)))
+            .ToList();
+
         return View(model);
     }
 

@@ -6,6 +6,21 @@
     var margins = JsonSerializer.Serialize(Model.Trend.Select(t => t.MarginPct));
     var revenue = JsonSerializer.Serialize(Model.Trend.Select(t => t.NetRevenuePerDay));
     var units = JsonSerializer.Serialize(Model.Trend.Select(t => t.UnitsPerDay));
+
+    string intentTitle(ChangeIntent i) => i switch
+    {
+        ChangeIntent.MarginCapture => "Margin captures (price ↑)",
+        ChangeIntent.VolumeStimulation => "Volume plays (price ↓)",
+        ChangeIntent.Clearance => "Clearance (dead/aging)",
+        _ => i.ToString()
+    };
+    string intentShort(ChangeIntent i) => i switch
+    {
+        ChangeIntent.MarginCapture => "Margin",
+        ChangeIntent.VolumeStimulation => "Volume",
+        ChangeIntent.Clearance => "Clearance",
+        _ => i.ToString()
+    };
 }
 
 <h1 class="h3">Impact Dashboard</h1>
@@ -133,6 +148,89 @@
         </div></div>
     </div>
 </div>
+
+<h2 class="h4 mt-4">Did the bet pay off?</h2>
+<p class="text-muted"><small>Each pushed change graded by the metric that matches its intent — margin captures on profit, volume plays &amp; clearance on units — over a 7-day pre/post window. @Model.MaturedOutcomeCount matured.</small></p>
+
+@if (Model.MaturedOutcomeCount == 0)
+{
+    <div class="alert alert-light border" role="alert">
+        <span class="text-muted">No matured outcomes yet — once approved price changes have been live for ~7 days, their realized impact lands here.</span>
+    </div>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        @foreach (var s in Model.OutcomeSummaries)
+        {
+            var accent = s.Total == 0 ? "" : (s.WinRatePct >= 50 ? "border-success" : "border-warning");
+            <div class="col-md-4">
+                <div class="card h-100 @accent">
+                    <div class="card-body">
+                        <h6 class="text-muted">@intentTitle(s.Intent)</h6>
+                        @if (s.Total == 0)
+                        {
+                            <div class="fs-5 text-muted">No matured changes</div>
+                        }
+                        else if (s.Intent == ChangeIntent.MarginCapture)
+                        {
+                            <div class="fs-3">€@(s.AvgDeltaGrossProfitPerDay?.ToString("+0.##;-0.##") ?? "–")<small class="text-muted fs-6"> profit/day</small></div>
+                            <small class="text-muted">@s.Wins/@s.Total wins (@s.WinRatePct.ToString("0")%) · units @(s.AvgDeltaUnitsPerDay.ToString("+0.#;-0.#"))/day</small>
+                        }
+                        else
+                        {
+                            <div class="fs-3">@(s.AvgDeltaUnitsPerDay.ToString("+0.#;-0.#"))<small class="text-muted fs-6"> units/day</small></div>
+                            <small class="text-muted">@s.Wins/@s.Total wins (@s.WinRatePct.ToString("0")%) · profit €@(s.AvgDeltaGrossProfitPerDay?.ToString("+0.##;-0.##") ?? "–")/day</small>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card h-100"><div class="card-body">
+                <h6>Biggest wins</h6>
+                <table class="table table-sm">
+                    <thead><tr><th>SKU</th><th>Intent</th><th class="text-end">Δ units/day</th><th class="text-end">Δ €/day</th></tr></thead>
+                    <tbody>
+                    @foreach (var o in Model.TopWins)
+                    {
+                        <tr>
+                            <td><a asp-controller="Sku" asp-action="Details" asp-route-id="@o.Sku">@o.Sku</a></td>
+                            <td>@intentShort(o.Intent)</td>
+                            <td class="text-end">@o.DeltaUnitsPerDay.ToString("+0.#;-0.#")</td>
+                            <td class="text-end">@o.DeltaGrossProfitPerDay.ToString("+0.##;-0.##")</td>
+                        </tr>
+                    }
+                    @if (!Model.TopWins.Any()) { <tr><td colspan="4" class="text-muted">No wins yet.</td></tr> }
+                    </tbody>
+                </table>
+            </div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card h-100"><div class="card-body">
+                <h6>Worst backfires</h6>
+                <table class="table table-sm">
+                    <thead><tr><th>SKU</th><th>Intent</th><th class="text-end">Δ units/day</th><th class="text-end">Δ €/day</th></tr></thead>
+                    <tbody>
+                    @foreach (var o in Model.WorstBackfires)
+                    {
+                        <tr>
+                            <td><a asp-controller="Sku" asp-action="Details" asp-route-id="@o.Sku">@o.Sku</a></td>
+                            <td>@intentShort(o.Intent)</td>
+                            <td class="text-end">@o.DeltaUnitsPerDay.ToString("+0.#;-0.#")</td>
+                            <td class="text-end">@o.DeltaGrossProfitPerDay.ToString("+0.##;-0.##")</td>
+                        </tr>
+                    }
+                    @if (!Model.WorstBackfires.Any()) { <tr><td colspan="4" class="text-muted">No backfires — nice.</td></tr> }
+                    </tbody>
+                </table>
+            </div></div>
+        </div>
+    </div>
+}
 
 <p class="text-muted"><small>Drill into any SKU from the Proposals page or via <code>/Sku/Details/&lt;SKU&gt;</code>.</small></p>
 

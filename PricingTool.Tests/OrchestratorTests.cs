@@ -58,6 +58,7 @@ public class OrchestratorTests
             new PriceCalculator(new WeightedScoringService(), new GuardrailService(), new RoundingService()),
             algorithms,
             new AuditService(db),
+            new OutcomeEvaluationService(db, new AuditService(db), NullLogger<OutcomeEvaluationService>.Instance),
             Options.Create(new PricingEngineOptions()),
             NullLogger<PricingRunOrchestrator>.Instance);
     }

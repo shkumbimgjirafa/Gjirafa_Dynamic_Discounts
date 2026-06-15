@@ -2,16 +2,20 @@ namespace PricingTool.Data.Services;
 
 /// <summary>
 /// The daily dataset query, runnable verbatim when the stored procedure cannot be deployed.
-/// This is the CORRECTED version: @now is captured once and used consistently everywhere,
-/// including the discount OUTER APPLY (the original called GETUTCDATE() there separately).
-/// Keep in sync with scripts/usp_GetDailyPricingDataset.sql.
+/// @now is captured once and used consistently everywhere, including the discount filter.
+///
+/// SET-BASED REWRITE: the latest tier price and the best active discount are now resolved in
+/// bulk via ROW_NUMBER() into #tier / #disc, instead of per-product correlated OUTER APPLYs.
+/// The correlated version did not complete on the full catalog (~680k SKUs); this version
+/// returns the whole set in ~20s. Output schema is unchanged. Keep in sync with
+/// scripts/usp_GetDailyPricingDataset.sql.
 /// </summary>
 public static class SourceQueries
 {
     public const string StoredProcedureName = "dbo.usp_GetDailyPricingDataset";
 
     public const string DailyDatasetInline = @"
-DROP TABLE IF EXISTS #vendors, #stock, #sales, #pricing;
+DROP TABLE IF EXISTS #vendors, #stock, #sales, #pricing, #tier, #disc;
 DECLARE @now  datetime = GETUTCDATE();
 DECLARE @d7   datetime = DATEADD(DAY, -7,  @now);
 DECLARE @d14  datetime = DATEADD(DAY, -14, @now);
@@ -80,6 +84,43 @@ INNER JOIN #stock st ON st.Sku = pp.ProductCode
 WHERE pp.CountryId = 1;
 CREATE CLUSTERED INDEX cx ON #pricing (Sku);
 
+-- Latest tier price per product (StoreId = 2), resolved in bulk (replaces correlated OUTER APPLY).
+SELECT t.ProductId, t.Price, t.OldPrice
+INTO #tier
+FROM (
+    SELECT tp.ProductId, tp.Price, tp.OldPrice,
+           ROW_NUMBER() OVER (PARTITION BY tp.ProductId ORDER BY tp.Id DESC) AS rn
+    FROM GjirafaMall.dbo.TierPrice tp
+    INNER JOIN #stock st ON st.ProductId = tp.ProductId
+    WHERE tp.StoreId = 2
+) t
+WHERE t.rn = 1;
+CREATE CLUSTERED INDEX cx ON #tier (ProductId);
+
+-- Best (lowest) active discounted price per product, resolved in bulk (replaces correlated OUTER APPLY).
+-- Depends on #tier because percentage discounts apply to the tier old/current price.
+SELECT x.ProductId, x.DiscountedPrice
+INTO #disc
+FROM (
+    SELECT dap.Product_Id AS ProductId,
+           IIF(d.UsePercentage = 1,
+               ISNULL(NULLIF(t.OldPrice, 0), t.Price) * (1 - d.DiscountPercentage / 100.0),
+               d.DiscountAmount) AS DiscountedPrice,
+           ROW_NUMBER() OVER (
+               PARTITION BY dap.Product_Id
+               ORDER BY IIF(d.UsePercentage = 1,
+                            ISNULL(NULLIF(t.OldPrice, 0), t.Price) * (1 - d.DiscountPercentage / 100.0),
+                            d.DiscountAmount) ASC) AS rn
+    FROM GjirafaMall.dbo.Discount_AppliedToProducts dap
+    INNER JOIN GjirafaMall.dbo.Discount d ON d.Id = dap.Discount_Id
+    INNER JOIN #tier t ON t.ProductId = dap.Product_Id
+    WHERE d.StoreId = 2
+      AND d.RequiresCouponCode = 0
+      AND @now BETWEEN ISNULL(d.StartDateUtc, '1900') AND ISNULL(d.EndDateUtc, '2999')
+) x
+WHERE x.rn = 1;
+CREATE CLUSTERED INDEX cx ON #disc (ProductId);
+
 SELECT
     st.Sku,
     px.OldPrice,
@@ -95,34 +136,15 @@ SELECT
     ISNULL(s.[60d_qty], 0) AS [60d_qty], ISNULL(s.[60d_net], 0) AS [60d_net], s.[60d_avg_discount_pct],
     ISNULL(s.[90d_qty], 0) AS [90d_qty], ISNULL(s.[90d_net], 0) AS [90d_net], s.[90d_avg_discount_pct]
 FROM #stock st
-OUTER APPLY (
-    SELECT TOP 1 tp.Price, tp.OldPrice
-    FROM GjirafaMall.dbo.TierPrice tp
-    WHERE tp.ProductId = st.ProductId AND tp.StoreId = 2
-    ORDER BY tp.Id DESC
-) tp
-OUTER APPLY (
-    SELECT TOP 1
-        IIF(d.UsePercentage = 1,
-            ISNULL(NULLIF(tp.OldPrice, 0), tp.Price) * (1 - d.DiscountPercentage / 100.0),
-            d.DiscountAmount) AS DiscountedPrice
-    FROM GjirafaMall.dbo.Discount_AppliedToProducts dap
-    INNER JOIN GjirafaMall.dbo.Discount d ON d.Id = dap.Discount_Id
-    WHERE dap.Product_Id = st.ProductId
-      AND d.StoreId = 2
-      AND d.RequiresCouponCode = 0
-      AND @now BETWEEN ISNULL(d.StartDateUtc, '1900') AND ISNULL(d.EndDateUtc, '2999')
-    ORDER BY IIF(d.UsePercentage = 1,
-                 ISNULL(NULLIF(tp.OldPrice, 0), tp.Price) * (1 - d.DiscountPercentage / 100.0),
-                 d.DiscountAmount) ASC
-) dx
+LEFT JOIN #tier t  ON t.ProductId  = st.ProductId
+LEFT JOIN #disc dx ON dx.ProductId = st.ProductId
 CROSS APPLY (
     SELECT
-        ISNULL(NULLIF(tp.OldPrice, 0), tp.Price) AS OldPrice,
-        ISNULL(dx.DiscountedPrice, tp.Price)     AS CurrentPrice
+        ISNULL(NULLIF(t.OldPrice, 0), t.Price) AS OldPrice,
+        ISNULL(dx.DiscountedPrice, t.Price)    AS CurrentPrice
 ) px
 LEFT JOIN #pricing pr ON pr.Sku = st.Sku
 LEFT JOIN #sales   s  ON s.ProductId = st.ProductId;
 
-DROP TABLE #vendors, #stock, #sales, #pricing;";
+DROP TABLE #vendors, #stock, #sales, #pricing, #tier, #disc;";
 }

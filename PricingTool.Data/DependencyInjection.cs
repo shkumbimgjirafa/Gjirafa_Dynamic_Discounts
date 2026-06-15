@@ -53,9 +53,11 @@ public static class DependencyInjection
         services.AddScoped<SnapshotService>();
         services.AddScoped<BandConfigProvider>();
         services.AddScoped<AuditService>();
+        services.AddScoped<OutcomeEvaluationService>();
         services.AddScoped<ScheduleService>();
         services.AddScoped<PricingRunOrchestrator>();
         services.AddScoped<DemoHistoryBackfill>();
+        services.AddScoped<DemoOutcomeSeeder>();
         services.AddScoped<IPricePushService, CsvPricePushService>();
 
         return services;

@@ -8,6 +8,10 @@ using PricingTool.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load .env (gitignored) for local source-database credentials. When SOURCE_DB_HOST is
+// filled in, this builds the SourceReadOnly connection string and turns off demo mode.
+EnvFileLoader.ApplyDotEnv(builder);
+
 builder.Services.AddPricingTool(builder.Configuration);
 builder.Services.AddControllersWithViews();
 builder.Services.AddSingleton<RunLauncher>();
@@ -51,7 +55,10 @@ using (var scope = app.Services.CreateScope())
     await DbSeeder.SeedCoreAsync(db, options);
 
     if (options.UseDemoData)
+    {
         await scope.ServiceProvider.GetRequiredService<DemoHistoryBackfill>().EnsureBackfilledAsync();
+        await scope.ServiceProvider.GetRequiredService<DemoOutcomeSeeder>().EnsureSeededAsync();
+    }
 }
 
 app.Run();

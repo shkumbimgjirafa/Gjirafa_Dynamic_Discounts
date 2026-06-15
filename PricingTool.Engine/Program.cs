@@ -24,7 +24,10 @@ using (var scope = host.Services.CreateScope())
     await DbSeeder.SeedCoreAsync(db, options);
 
     if (options.UseDemoData)
+    {
         await scope.ServiceProvider.GetRequiredService<DemoHistoryBackfill>().EnsureBackfilledAsync();
+        await scope.ServiceProvider.GetRequiredService<DemoOutcomeSeeder>().EnsureSeededAsync();
+    }
 }
 
 // `--run-now`: execute one pricing run immediately and exit (ops/cron escape hatch).

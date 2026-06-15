@@ -19,6 +19,7 @@ public class PricingToolDbContext : DbContext
     public DbSet<DailySnapshot> DailySnapshots => Set<DailySnapshot>();
     public DbSet<PricingRun> PricingRuns => Set<PricingRun>();
     public DbSet<ProposedPrice> ProposedPrices => Set<ProposedPrice>();
+    public DbSet<PriceChangeOutcome> PriceChangeOutcomes => Set<PriceChangeOutcome>();
     public DbSet<AlgorithmVoteRecord> AlgorithmVotes => Set<AlgorithmVoteRecord>();
     public DbSet<PriceBand> PriceBands => Set<PriceBand>();
     public DbSet<BandAlgorithmSetting> BandAlgorithmSettings => Set<BandAlgorithmSetting>();
@@ -75,6 +76,30 @@ public class PricingToolDbContext : DbContext
             e.Property(x => x.GuardrailFlags).HasMaxLength(512);
             e.Property(x => x.SkipReason).HasMaxLength(64);
             e.Property(x => x.ReviewedBy).HasMaxLength(256);
+        });
+
+        builder.Entity<PriceChangeOutcome>(e =>
+        {
+            e.ToTable("PriceChangeOutcomes");
+            e.HasOne(x => x.ProposedPrice).WithMany().HasForeignKey(x => x.ProposedPriceId);
+            // One outcome per pushed proposal. Unique + filtered because the FK is nullable (an
+            // outcome can outlive its proposal); matches the unique-natural-key convention on the
+            // other tables and gives the application-level dedupe a hard DB backstop.
+            e.HasIndex(x => x.ProposedPriceId).IsUnique().HasFilter("[ProposedPriceId] IS NOT NULL");
+            e.HasIndex(x => x.Verdict);
+            e.HasIndex(x => x.AppliedUtc);
+            e.Property(x => x.Sku).HasMaxLength(64);
+            e.Property(x => x.Note).HasMaxLength(512);
+            e.Property(x => x.OldPrice).HasPrecision(18, 2);
+            e.Property(x => x.NewPrice).HasPrecision(18, 2);
+            e.Property(x => x.PreUnitsPerDay).HasPrecision(12, 4);
+            e.Property(x => x.PostUnitsPerDay).HasPrecision(12, 4);
+            // Margin % is recomputed as (Net7 - cost*Qty7)/Net7; on a loss-making SKU with tiny Net7
+            // it can be a large negative number, so it needs far more headroom than a bounded source %.
+            e.Property(x => x.PreMarginPct).HasPrecision(18, 4);
+            e.Property(x => x.PostMarginPct).HasPrecision(18, 4);
+            e.Property(x => x.PreGrossProfitPerDay).HasPrecision(18, 2);
+            e.Property(x => x.PostGrossProfitPerDay).HasPrecision(18, 2);
         });
 
         builder.Entity<AlgorithmVoteRecord>(e =>
