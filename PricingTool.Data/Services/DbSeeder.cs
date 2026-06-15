@@ -1,7 +1,4 @@
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using PricingTool.Core.Algorithms;
 using PricingTool.Core.Domain;
 using PricingTool.Core.Options;
@@ -9,6 +6,10 @@ using PricingTool.Data.Entities;
 
 namespace PricingTool.Data.Services;
 
+/// <summary>
+/// Role names for the tool. Authentication is currently a dev no-auth shim; when Gjirafa's
+/// Porta SSO is integrated these are the role claims Porta must supply for authorization.
+/// </summary>
 public static class PricingRoles
 {
     public const string Analyst = "Analyst";
@@ -17,8 +18,8 @@ public static class PricingRoles
 
 /// <summary>
 /// Idempotent startup seeding: 8 placeholder price bands (boundaries 2–7 are PLACEHOLDERS —
-/// confirm before go-live), per-band algorithm settings, schedule defaults, Identity roles and
-/// the initial admin account from configuration.
+/// confirm before go-live), per-band algorithm settings, and schedule defaults.
+/// No identity seeding — authentication is handled by the dev shim until Porta is wired in.
 /// </summary>
 public static class DbSeeder
 {
@@ -85,41 +86,5 @@ public static class DbSeeder
 
         await EnsureSetting(ToolSettingKeys.RunTimeUtc, options.DefaultRunTimeUtc);
         await EnsureSetting(ToolSettingKeys.CadenceHours, options.DefaultCadenceHours.ToString());
-    }
-
-    public static async Task SeedIdentityAsync(IServiceProvider services, IConfiguration config, ILogger logger)
-    {
-        var roleManager = (RoleManager<IdentityRole>)services.GetService(typeof(RoleManager<IdentityRole>))!;
-        var userManager = (UserManager<IdentityUser>)services.GetService(typeof(UserManager<IdentityUser>))!;
-
-        foreach (var role in new[] { PricingRoles.Analyst, PricingRoles.Manager })
-        {
-            if (!await roleManager.RoleExistsAsync(role))
-                await roleManager.CreateAsync(new IdentityRole(role));
-        }
-
-        var adminEmail = config["Seed:AdminEmail"];
-        var adminPassword = config["Seed:AdminPassword"];
-        if (string.IsNullOrWhiteSpace(adminEmail) || string.IsNullOrWhiteSpace(adminPassword))
-        {
-            logger.LogWarning("Seed:AdminEmail / Seed:AdminPassword not configured — no admin account seeded.");
-            return;
-        }
-
-        var admin = await userManager.FindByEmailAsync(adminEmail);
-        if (admin is null)
-        {
-            admin = new IdentityUser { UserName = adminEmail, Email = adminEmail, EmailConfirmed = true };
-            var result = await userManager.CreateAsync(admin, adminPassword);
-            if (!result.Succeeded)
-            {
-                logger.LogError("Failed to seed admin account: {Errors}",
-                    string.Join("; ", result.Errors.Select(e => e.Description)));
-                return;
-            }
-        }
-
-        if (!await userManager.IsInRoleAsync(admin, PricingRoles.Manager))
-            await userManager.AddToRoleAsync(admin, PricingRoles.Manager);
     }
 }

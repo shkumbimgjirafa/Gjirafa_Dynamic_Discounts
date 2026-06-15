@@ -1,16 +1,16 @@
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PricingTool.Data.Entities;
 
 namespace PricingTool.Data;
 
 /// <summary>
-/// The tool's OWN database. Everything (including Identity) lives in the PricingTool schema,
-/// fully separate from the live platform databases, which are only ever read through the
-/// read-only source connection.
+/// The tool's OWN database, in the PricingTool schema, fully separate from the live platform
+/// databases (which are only ever read through the read-only source connection).
+///
+/// Authentication is intentionally NOT modelled here — it is handled by a dev no-auth shim
+/// until Gjirafa's Porta SSO is integrated, so there are no ASP.NET Identity tables.
 /// </summary>
-public class PricingToolDbContext : IdentityDbContext<IdentityUser>
+public class PricingToolDbContext : DbContext
 {
     public const string Schema = "PricingTool";
 

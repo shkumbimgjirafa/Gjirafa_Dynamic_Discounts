@@ -1,5 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PricingTool.Core.Options;
@@ -10,23 +9,17 @@ using PricingTool.Web.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddPricingTool(builder.Configuration);
-
-builder.Services
-    .AddDefaultIdentity<IdentityUser>(options =>
-    {
-        options.SignIn.RequireConfirmedAccount = false;
-        options.Password.RequiredLength = 8;
-    })
-    .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<PricingToolDbContext>();
-
 builder.Services.AddControllersWithViews();
-builder.Services.AddRazorPages();
 builder.Services.AddSingleton<RunLauncher>();
 
-// Everything requires sign-in by default; Identity's own pages opt out via [AllowAnonymous].
-builder.Services.AddAuthorizationBuilder()
-    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+// AUTHENTICATION INTENTIONALLY DISABLED until Gjirafa's Porta SSO is integrated.
+// DevAuthHandler auto-signs every request in as a single "demo" user holding both the Analyst
+// and Manager roles, so the app is fully usable with no login. The [Authorize(Roles = ...)]
+// markers on the controllers are preserved and resume enforcing the moment this scheme is
+// swapped for the real Porta scheme — no controller or view changes required.
+builder.Services
+    .AddAuthentication(DevAuthHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, DevAuthHandler>(DevAuthHandler.SchemeName, null);
 
 var app = builder.Build();
 
@@ -45,19 +38,17 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
-app.MapRazorPages();
 
-// Migrate + seed on startup (bands, schedule defaults, roles, initial admin, demo history).
+// Migrate + seed on startup (bands, schedule defaults, demo history). No identity seeding —
+// authentication is handled by the dev shim until Porta is wired in.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PricingToolDbContext>();
-    await db.Database.MigrateAsync();
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    await DbInitializer.MigrateWithRetryAsync(db, startupLogger);
 
     var options = scope.ServiceProvider.GetRequiredService<IOptions<PricingEngineOptions>>().Value;
     await DbSeeder.SeedCoreAsync(db, options);
-
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    await DbSeeder.SeedIdentityAsync(scope.ServiceProvider, app.Configuration, logger);
 
     if (options.UseDemoData)
         await scope.ServiceProvider.GetRequiredService<DemoHistoryBackfill>().EnsureBackfilledAsync();

@@ -17,7 +17,8 @@ var host = builder.Build();
 using (var scope = host.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PricingToolDbContext>();
-    await db.Database.MigrateAsync();
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+    await DbInitializer.MigrateWithRetryAsync(db, startupLogger);
 
     var options = scope.ServiceProvider.GetRequiredService<IOptions<PricingEngineOptions>>().Value;
     await DbSeeder.SeedCoreAsync(db, options);

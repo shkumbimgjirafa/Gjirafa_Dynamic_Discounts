@@ -29,8 +29,9 @@ Requirements: .NET 8 SDK, SQL Server (LocalDB is fine — default connection str
 dotnet run --project PricingTool.Web
 ```
 
-1. Open the printed URL and log in with the seeded admin (see `Seed` in `appsettings.json`;
-   default `admin@gjirafamall.local` / `ChangeMe!12345` — **change before any real deployment**).
+1. Open the printed URL — the app loads straight to the dashboard. **Authentication is disabled**
+   (interim dev shim) until Gjirafa's Porta SSO is connected, so there is no login and every page
+   is accessible. See [Authentication](#authentication) below.
 2. **Schedule → Run now** executes a full pricing cycle (pull → snapshot → propose).
 3. **Proposals** — review, filter, approve (changes >±20% require explicit confirmation), then
    **Push** writes the approved-prices CSV to `exports/` (the v1 integration point).
@@ -58,8 +59,7 @@ Two connection strings (in `appsettings.json` or environment variables
   Use a SQL login with **read-only / execute-only** rights; add `ApplicationIntent=ReadOnly`
   where applicable. The tool only ever reads from it.
 
-No secrets in code — use environment variables or a secret store for real credentials,
-including `Seed__AdminEmail` / `Seed__AdminPassword`.
+No secrets in code — use environment variables or a secret store for real credentials.
 
 ### 2. Deploy the dataset stored procedure
 
@@ -123,14 +123,22 @@ the price stays unchanged.
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
 history: consecutive daily snapshots with zero trailing-7d sales.
 
-## Roles
+## Authentication
+
+**Authentication is intentionally disabled in this build** — it will be provided by Gjirafa's
+**Porta** SSO later. In the meantime a dev shim ([`DevAuthHandler`](PricingTool.Web/Services/DevAuthHandler.cs))
+auto-signs every request in as a single `demo` user holding both roles, so the app opens with no
+login and nothing is gated. There are no ASP.NET Identity tables or accounts.
+
+**Wiring in Porta later:** replace the `AddAuthentication(...).AddScheme<…DevAuthHandler>`
+registration in [`Program.cs`](PricingTool.Web/Program.cs) with Porta's scheme (e.g. OpenID
+Connect) and map its claims to the `Analyst`/`Manager` roles below. The `[Authorize(Roles = …)]`
+markers already on the controllers then resume enforcing with no other code changes.
+
+### Roles (enforced once Porta is connected)
 
 - **Analyst** — view everything, trigger on-demand runs (simulations; runs only produce proposals).
 - **Manager** — everything + edit bands/schedule, approve/reject, push.
-
-The initial admin (Manager) is seeded from `Seed:AdminEmail`/`Seed:AdminPassword`. Additional
-users can self-register but have no role until a Manager assigns one (v1: directly in
-`AspNetUserRoles`; role-management UI is a backlog item).
 
 ## Tests
 
