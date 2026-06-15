@@ -84,6 +84,10 @@ public class PricingToolDbContext : DbContext
             e.HasIndex(x => x.Status);
             e.HasIndex(x => x.LayerId);
             e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
+            // |ChangePct| as a DB-computed column, indexed with (run, status) so the default
+            // "top 500 by change magnitude" view is an index range scan, not a 500k-row sort.
+            e.Property(x => x.AbsChangePct).HasPrecision(9, 4).HasComputedColumnSql("ABS([ChangePct])");
+            e.HasIndex(x => new { x.PricingRunId, x.Status, x.AbsChangePct });
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.OldPrice).HasPrecision(18, 2);
             e.Property(x => x.CurrentPrice).HasPrecision(18, 2);

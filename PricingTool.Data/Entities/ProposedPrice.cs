@@ -38,6 +38,13 @@ public class ProposedPrice
 
     public decimal ProposedPriceValue { get; set; }
     public decimal ChangePct { get; set; }
+
+    /// <summary>
+    /// DB-computed |ChangePct|. Lets the proposals listing sort/filter by change magnitude via an
+    /// index (full-catalog runs can have 500k+ changed rows; sorting them live times out).
+    /// </summary>
+    public decimal AbsChangePct { get; private set; }
+
     public bool HasChange { get; set; }
 
     /// <summary>Comma-separated winning reason codes, strongest first.</summary>

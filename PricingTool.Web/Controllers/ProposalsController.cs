@@ -35,6 +35,9 @@ public class ProposalsController : Controller
 
     public async Task<IActionResult> Index([FromQuery] ProposalsFilter filter)
     {
+        // Full-catalog runs are large; the default magnitude sort is index-backed, but the
+        // alternate sorts (sku / price) still scan, so give the listing more headroom than 30s.
+        _db.Database.SetCommandTimeout(120);
         var layerId = await _layers.RequireCurrentIdAsync();
         var model = new ProposalsViewModel
         {
@@ -65,7 +68,8 @@ public class ProposalsController : Controller
             "change_asc" => query.OrderBy(p => p.ChangePct),
             "sku" => query.OrderBy(p => p.Sku),
             "price_desc" => query.OrderByDescending(p => p.ProposedPriceValue),
-            _ => query.OrderByDescending(p => Math.Abs(p.ChangePct)),
+            // Uses the (PricingRunId, Status, AbsChangePct) index — no live sort of the full run.
+            _ => query.OrderByDescending(p => p.AbsChangePct),
         };
 
         model.Proposals = await query.Take(500).ToListAsync();
@@ -88,7 +92,7 @@ public class ProposalsController : Controller
                                      p.Votes.Any(v => v.AlgorithmCode == filter.Algorithm));
 
         if (filter.MinAbsChangePct.HasValue)
-            query = query.Where(p => Math.Abs(p.ChangePct) >= filter.MinAbsChangePct.Value);
+            query = query.Where(p => p.AbsChangePct >= filter.MinAbsChangePct.Value);
 
         if (filter.ChangedOnly && filter.Status == "Pending")
             query = query.Where(p => p.HasChange);
