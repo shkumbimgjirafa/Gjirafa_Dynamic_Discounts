@@ -80,7 +80,11 @@
         </select>
     </div>
     <div class="col-auto form-check mb-1">
+        @* Hidden fallback so UN-checking actually submits ChangedOnly=false. It must come AFTER
+           the checkbox: when checked the browser submits true,false and the binder takes the first
+           (true); when unchecked only false is sent. *@
         <input class="form-check-input" type="checkbox" name="ChangedOnly" value="true" checked="@f.ChangedOnly" id="changedOnly" />
+        <input type="hidden" name="ChangedOnly" value="false" />
         <label class="form-check-label" for="changedOnly">Changed only</label>
     </div>
     <div class="col-auto"><button class="btn btn-sm btn-primary">Apply</button></div>
