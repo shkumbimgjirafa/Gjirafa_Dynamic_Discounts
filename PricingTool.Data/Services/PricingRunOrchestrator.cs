@@ -16,8 +16,9 @@ namespace PricingTool.Data.Services;
 /// </summary>
 public class PricingRunOrchestrator
 {
-    /// <summary>A Running run older than this is considered crashed and is failed-out.</summary>
-    private static readonly TimeSpan StaleRunCutoff = TimeSpan.FromHours(2);
+    /// <summary>A Running run older than this is considered crashed and is failed-out (e.g. the
+    /// process was killed mid-run). Also used by the UI so a stale orphan doesn't read as "in progress".</summary>
+    public static readonly TimeSpan StaleRunCutoff = TimeSpan.FromHours(2);
 
     /// <summary>How many proposals to buffer before bulk-flushing them (and their votes) to SQL.</summary>
     private const int FlushChunkSize = 20_000;

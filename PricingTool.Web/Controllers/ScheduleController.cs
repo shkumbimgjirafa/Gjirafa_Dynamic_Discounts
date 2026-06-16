@@ -39,8 +39,11 @@ public class ScheduleController : Controller
             LastScheduledRunUtc = info.LastScheduledRunUtc,
             NextRunUtc = ScheduleService.ComputeNextRun(info, DateTime.UtcNow),
             // Runs are serialized globally, so any run in progress blocks this layer's "Run now".
+            // Ignore stale orphans (a run whose process was killed mid-run): they read as Running in
+            // the DB but aren't executing, and the next trigger's stale-run cleanup will fail them out.
             RunInProgress = _launcher.IsRunning ||
-                await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running),
+                await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running &&
+                    r.StartedUtc >= DateTime.UtcNow - PricingRunOrchestrator.StaleRunCutoff),
             RecentRuns = await _db.PricingRuns.Where(r => r.LayerId == layerId).OrderByDescending(r => r.Id).Take(10).ToListAsync(),
         };
         return View(model);
