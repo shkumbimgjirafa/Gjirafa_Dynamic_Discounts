@@ -18,6 +18,8 @@ public static class GuardrailFlags
     /// <summary>Even OldPrice violates the margin floor — SKU is fundamentally mispriced; needs human attention.</summary>
     public const string MarginFloorAboveOldPrice = "MARGIN_FLOOR_ABOVE_OLD_PRICE";
     public const string RoundingSkippedOutOfBounds = "ROUNDING_SKIPPED_OUT_OF_BOUNDS";
+    /// <summary>Stock sits only in supplier warehouses and isn't selling — a proposed markdown was blocked; we don't discount stock we don't hold locally.</summary>
+    public const string SupplierOnlyNoMarkdown = "SUPPLIER_ONLY_NO_MARKDOWN";
 }
 
 /// <summary>Reasons a SKU was excluded from pricing, recorded on a skipped proposal row.</summary>

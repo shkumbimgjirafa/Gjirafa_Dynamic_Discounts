@@ -4,8 +4,11 @@ namespace PricingTool.Core.Algorithms;
 
 /// <summary>
 /// Algorithm 10 — Supplier-vs-local stock positioning. (Low default weight.)
-/// Stock sitting only in supplier warehouses (slower fulfillment) on a slow mover → small extra
-/// discount; locally-stocked SKUs selling well → lean toward fuller price.
+/// Locally-stocked SKUs selling well → lean toward fuller price.
+///
+/// It deliberately does NOT nudge supplier-only slow movers down: we don't discount stock that
+/// sits only in supplier warehouses and isn't selling. (The engine-wide supplier-only-dead-stock
+/// guardrail — <see cref="Services.GuardrailService.IsSupplierOnlyDeadStock"/> — is the backstop.)
 /// </summary>
 public class SupplierVsLocalStockAlgorithm : IPricingAlgorithm
 {
@@ -17,16 +20,6 @@ public class SupplierVsLocalStockAlgorithm : IPricingAlgorithm
         if (ctx.TotalStock <= 0) return null;
 
         var localShare = (decimal)ctx.KsStock / ctx.TotalStock;
-
-        if (ctx.KsStock == 0 && ctx.SupplierStock > 0 && ctx.Qty30 <= 2)
-        {
-            var target = ctx.CurrentDiscountFraction + 0.03m;
-            return new AlgorithmVote(
-                ctx.PriceAtDiscount(target),
-                0.4m,
-                "SUPPLIER_ONLY_SLOW",
-                "Stock only in supplier warehouses and ≤2 sales in 30d — small extra discount to move it.");
-        }
 
         if (localShare >= 0.8m && ctx.Qty30 >= 10)
         {

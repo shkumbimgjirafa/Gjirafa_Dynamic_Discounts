@@ -131,8 +131,8 @@ there's not enough sales data.
 ---
 
 ### 7. Dead-stock progressive markdown — *default weight 75*
-**The situation:** Zero sales in the last 90 days, but we still have stock sitting there —
-true dead stock.
+**The situation:** Zero sales in the last 90 days, but we still have stock **in our own
+warehouse** sitting there — true dead stock that's ours to clear.
 
 **What it does:** Start at **10% off** and add **5pp every two weeks** it stays unsold,
 deepening the discount as far down as the margin floor allows (there's no discount ceiling
@@ -140,6 +140,10 @@ to stop it). It only ever marks *down* — it will never shrink a discount that'
 place.
 
 This is the strongest "get it moving" advisor for stuck inventory.
+
+**Silent when:** the dead stock sits *only* in supplier warehouses (none held locally). We
+don't discount stock we don't hold that isn't selling — see the supplier-stock guardrail
+below.
 
 ---
 
@@ -171,12 +175,12 @@ margin away for sales we'd have made anyway.
 ### 10. Supplier-vs-local stock positioning — *default weight 10 (low)*
 **The angle:** *Where* the stock sits affects how fast we can fulfill it.
 
-- **Stock only in supplier warehouses** (slower to ship) **and** a slow mover (≤2 sales in
-  30 days) → small **+3pp** discount to help move it.
 - **Mostly local stock (≥80%)** and **selling well** (≥10 in 30 days) → lean toward a
   **fuller price** (cut the discount to three-quarters).
 
-This is a gentle tie-breaker, which is why its default weight is low.
+This is a gentle tie-breaker, which is why its default weight is low. It only ever leans
+*toward fuller price* now — it never discounts supplier-only stock, because we don't give
+margin away on inventory that sits only in supplier warehouses and isn't selling.
 
 ---
 
@@ -201,12 +205,17 @@ products and be switched off for another.
 
 ## The guardrails (hard limits)
 
-After the averaging, two non-negotiable limits are applied:
+After the averaging, three non-negotiable limits are applied:
 
 1. **Margin floor** — the price can't drop below the level that still earns the band's
    minimum margin on cost. This is the *only* limit on how deep a discount can go.
 2. **Shelf-price cap** — the price can't go above the full shelf price. The tool proposes
    discounts, not increases.
+3. **No markdown on supplier-only dead stock** — if every unit sits in a supplier warehouse
+   (none in our own) **and** nothing has sold in 90 days, the price is never marked *below*
+   today's price. We don't give margin away on inventory we don't hold that isn't selling.
+   (Raising the price back toward full is still allowed — only a net markdown is blocked.)
+   This is enforced centrally, so it applies no matter which advisor proposed the discount.
 
 > **Note:** There is **no discount ceiling**. Discounts may go as deep as the margin floor
 > allows — the floor is the sole brake on how low a price can land.
@@ -255,10 +264,10 @@ to cheap vs. expensive products, without changing any algorithm itself.
 | 4 | Stockout-risk protection | up (full price) | will sell out soon & margin is healthy |
 | 5 | Price elasticity | back to baseline / hold | recent deeper discount, measured response |
 | 6 | Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
-| 7 | Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in stock |
+| 7 | Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in **local** stock |
 | 8 | Discount-effectiveness correction | up (halve discount) | discounting but sales are flat |
 | 9 | Velocity-trend momentum | up if accelerating, down if slowing | enough sales to read a trend |
-| 10 | Supplier-vs-local stock positioning | small down / up | stock location + sales speed signal |
+| 10 | Supplier-vs-local stock positioning | up (toward fuller price) | mostly-local stock selling well |
 
 *All numeric thresholds above are the current defaults and can be tuned. Discounts are always
 measured against the full shelf price; margins are always computed after VAT is removed.*

@@ -26,6 +26,7 @@ public static class ReasonCodeText
         ["CAPPED_AT_OLD_PRICE"] = "Capped at full shelf price",
         ["MARGIN_FLOOR_ABOVE_OLD_PRICE"] = "⚠ Even full price misses margin floor",
         ["ROUNDING_SKIPPED_OUT_OF_BOUNDS"] = "Rounding skipped (would breach guardrail)",
+        ["SUPPLIER_ONLY_NO_MARKDOWN"] = "Supplier-only dead stock — markdown blocked",
     };
 
     public static string Describe(string code) =>

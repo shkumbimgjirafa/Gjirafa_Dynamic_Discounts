@@ -28,6 +28,9 @@ packages/
 Thumbs.db
 .DS_Store
 
+# Microsoft Office owner-lock temp files (e.g. open PowerPoint/Word docs)
+~$*
+
 # Local environment overrides (keep appsettings.json — values are placeholders/local-dev only)
 appsettings.*.local.json
 *.env

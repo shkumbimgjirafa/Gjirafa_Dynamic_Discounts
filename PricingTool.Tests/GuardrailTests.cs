@@ -96,4 +96,71 @@ public class GuardrailTests
         Assert.Equal(73.75m, bounds.Lower);
         Assert.Equal(100m, bounds.Upper);
     }
+
+    // ---- Supplier-only dead stock: never marked down (engine-wide rule) -------------------
+
+    [Fact]
+    public void Clamp_SupplierOnlyDeadStock_BlocksMarkdown_RaisesToCurrentPrice()
+    {
+        // No local stock, all supplier, zero 90d sales: a markdown vote is pulled back to today's price.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+            ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
+
+        var result = _guardrails.Clamp(ctx, 70m);
+
+        Assert.Equal(90m, result.Price);
+        Assert.Contains(GuardrailFlags.SupplierOnlyNoMarkdown, result.Flags);
+    }
+
+    [Fact]
+    public void Bounds_SupplierOnlyDeadStock_LowerBoundIsCurrentPrice()
+    {
+        // The current price becomes the floor so rounding can't sneak a markdown back in.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+            ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
+
+        var bounds = _guardrails.GetBounds(ctx);
+
+        Assert.Equal(90m, bounds.Lower);
+        Assert.Equal(100m, bounds.Upper);
+    }
+
+    [Fact]
+    public void Clamp_SupplierOnlyDeadStock_StillAllowsRaisingTowardFullPrice()
+    {
+        // Removing an existing discount is fine — only a net markdown is blocked.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+            ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
+
+        var result = _guardrails.Clamp(ctx, 95m);
+
+        Assert.Equal(95m, result.Price);
+        Assert.DoesNotContain(GuardrailFlags.SupplierOnlyNoMarkdown, result.Flags);
+    }
+
+    [Fact]
+    public void Clamp_SupplierStockThatSells_IsNotBlocked()
+    {
+        // Supplier-only but it IS selling (qty90 > 0) → the rule doesn't apply; markdown passes.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+            ksStock: 0, supplierStock: 50, qty90: 12, band: TestData.Band(marginFloorPct: 10m));
+
+        var result = _guardrails.Clamp(ctx, 70m);
+
+        Assert.Equal(70m, result.Price);
+        Assert.Empty(result.Flags);
+    }
+
+    [Fact]
+    public void Clamp_LocallyHeldDeadStock_IsNotBlocked()
+    {
+        // We hold it locally → dead-stock markdown is allowed; the supplier rule must not fire.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+            ksStock: 50, supplierStock: 0, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
+
+        var result = _guardrails.Clamp(ctx, 70m);
+
+        Assert.Equal(70m, result.Price);
+        Assert.Empty(result.Flags);
+    }
 }

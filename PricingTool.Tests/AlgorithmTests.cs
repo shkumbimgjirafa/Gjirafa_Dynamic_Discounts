@@ -284,6 +284,24 @@ public class DeadStockTests
         var ctx = TestData.Ctx(ksStock: 10, qty90: 1);
         Assert.Null(_algorithm.Evaluate(ctx));
     }
+
+    [Fact]
+    public void SupplierOnlyDeadStock_NoOpinion_WeDontDiscountStockWeDontHold()
+    {
+        // Zero sales in 90d, but every unit sits in a supplier warehouse — not ours to mark down.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m,
+            ksStock: 0, supplierStock: 50, qty90: 0, zeroSaleStreakDays: 60);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void MixedDeadStock_FiresOnLocallyHeldUnits()
+    {
+        // Some local stock plus some supplier stock, all dead → we still mark down what we hold.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m,
+            ksStock: 5, supplierStock: 50, qty90: 0);
+        Assert.Equal(90m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
 }
 
 public class DiscountEffectivenessTests
@@ -371,15 +389,12 @@ public class SupplierLocalTests
     private readonly SupplierVsLocalStockAlgorithm _algorithm = new();
 
     [Fact]
-    public void SupplierOnlySlowMover_VotesSmallExtraDiscount()
+    public void SupplierOnlySlowMover_NoLongerDiscounts_NoOpinion()
     {
+        // We don't discount stock that sits only in supplier warehouses and isn't selling.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m,
             ksStock: 0, supplierStock: 50, qty30: 1);
-        var vote = _algorithm.Evaluate(ctx);
-
-        Assert.NotNull(vote);
-        Assert.Equal(87m, vote!.SuggestedPrice);
-        Assert.Equal("SUPPLIER_ONLY_SLOW", vote.ReasonCode);
+        Assert.Null(_algorithm.Evaluate(ctx));
     }
 
     [Fact]
