@@ -1,27 +1,57 @@
-# GjirafaMall AI Dynamic Pricing Tool — v1
+# Gjirafa AI Dynamic Pricing Tool — v1
 
-In-house automated dynamic pricing for GjirafaMall (Kosovo store, selected vendors).
-Recalculates **proposed** prices on a configurable schedule (default daily 03:00 UTC) from
-margin, demand, inventory and historical sales — profit-first: hold sales volume, lift margin 25%+.
+In-house automated dynamic pricing for Gjirafa's e-commerce stores. Recalculates **proposed**
+prices on a configurable schedule (default daily 03:00 UTC) from margin, demand, inventory and
+historical sales — profit-first: hold sales volume, lift margin 25%+.
 
 **The engine never writes to live platform prices.** It writes proposals to its own database.
 Pushing approved prices to the platform is a separate, explicit, Manager-triggered step.
+
+## Layers (multi-store)
+
+The tool is **multi-layer**: a *layer* is a Brand × Country combination, and everything — the
+source pull, snapshots, proposals, price bands, schedule and dashboard — is scoped to the
+selected layer. Six layers ship seeded and active:
+
+| Brand | Country | Store DB | StoreId | TranslationCountryId | Warehouse | Currency | Vendor filter |
+|---|---|---|---|---|---|---|---|
+| GjirafaMall | KS | `GjirafaMall` | 2 | 1 | 2 | EUR | Gjirafa/Dino Toys/Mysu/Apple |
+| GjirafaMall | MK | `GjirafaMall` | 1 | 3 | 1 | MKD | (same set) |
+| GjirafaMall | AL | `GjirafaMall` | 3 | 2 | 3 | ALL | (same set) |
+| Gjirafa50 | KS | `GjirafaEcommerce` | 2 | 1 | 2 | EUR | **all vendors** |
+| Gjirafa50 | MK | `GjirafaEcommerce` | 1 | 3 | 1 | MKD | **all vendors** |
+| Gjirafa50 | AL | `GjirafaEcommerce` | 3 | 2 | 3 | ALL | **all vendors** |
+
+- The source query reads the operational data (vendors, products, stock, orders, tier prices,
+  discounts) from the layer's **operational database** (`GjirafaMall` ↔ `GjirafaEcommerce`,
+  substituted into the query per layer) and cost/margin from the **shared** `GjirafaTranslations`
+  database keyed by `TranslationCountryId`.
+- Each layer carries its own price bands, per-algorithm weights and schedule. Switch the active
+  layer from the brand → country dropdown in the nav; it's remembered in your session.
+- Runs are **per-layer but serialized globally** (one run at a time across all layers — the
+  bulk-write path is not concurrency-safe). The scheduler fires each active layer on its own slot.
+- **Excluded from every layer:** outlet products (`Product.IsOutlet = 1`, priced by a separate
+  system) and products not published in the layer's store (`UnpublishedStoreids`).
+
+The `Layer` rows (IDs, currency, toggles, schedule) are seeded by `DbSeeder` and the `AddLayers`
+migration; activating/deactivating or retuning a layer is a data edit (no redeploy).
 
 ## Solution layout
 
 | Project | Purpose |
 |---|---|
-| `PricingTool.Core` | Domain: the 10 pricing algorithms, weighted scoring, guardrails, VAT math, psychological rounding, demo data generator |
-| `PricingTool.Data` | EF Core (migrations, `PricingTool` schema), source dataset readers, run orchestrator, CSV push integration, audit |
-| `PricingTool.Engine` | Background worker — scheduled recalculation (reads schedule from DB, admin-editable live) |
-| `PricingTool.Web` | ASP.NET Core admin UI + impact dashboard (Identity auth, Analyst/Manager roles) |
-| `PricingTool.Tests` | xUnit suite (92 tests): every algorithm incl. 0-vs-NULL handling, guardrails, VAT reconciliation, rounding-never-violates-guardrails, weighted scoring, orchestrator policies |
+| `PricingTool.Core` | Domain: the 10 pricing algorithms, weighted scoring, guardrails, VAT math, psychological rounding (incl. currency-aware), demo data generator |
+| `PricingTool.Data` | EF Core (migrations, `PricingTool` schema), per-layer source dataset readers, run orchestrator, bulk writer, CSV push integration, audit |
+| `PricingTool.Engine` | Background worker — scheduled recalculation, looping active layers (schedule read per layer from DB, admin-editable live) |
+| `PricingTool.Web` | ASP.NET Core admin UI + impact dashboard, layer switcher (dev-shim auth, Analyst/Manager roles) |
+| `PricingTool.Tests` | xUnit suite (130 tests): every algorithm incl. 0-vs-NULL handling, guardrails, VAT reconciliation, rounding-never-violates-guardrails (all conventions), weighted scoring, orchestrator policies |
 
 ## Quick start (demo mode — no source database needed)
 
 Demo mode is **on by default** (`PricingEngine:UseDemoData = true`). It fabricates a realistic
 catalog (~360 SKUs across all bands: fast movers, dead stock, discount-insensitive, missing-cost…)
-and backfills 35 days of snapshot history on first boot so the dashboard has trends.
+**for every active layer** and backfills 35 days of snapshot history on first boot so each layer's
+dashboard has trends.
 
 Requirements: .NET 8 SDK, SQL Server (LocalDB is fine — default connection strings use it).
 
@@ -29,21 +59,24 @@ Requirements: .NET 8 SDK, SQL Server (LocalDB is fine — default connection str
 dotnet run --project PricingTool.Web
 ```
 
-1. Open the printed URL — the app loads straight to the dashboard. **Authentication is disabled**
-   (interim dev shim) until Gjirafa's Porta SSO is connected, so there is no login and every page
-   is accessible. See [Authentication](#authentication) below.
-2. **Schedule → Run now** executes a full pricing cycle (pull → snapshot → propose).
-3. **Proposals** — review, filter, approve (changes >±20% require explicit confirmation), then
+1. Open the printed URL — the app loads straight to the dashboard for the default layer
+   (**GjirafaMall — Kosovo**). **Authentication is disabled** (interim dev shim) until Gjirafa's
+   Porta SSO is connected, so there is no login and every page is accessible. See
+   [Authentication](#authentication).
+2. Use the **layer switcher** (top-right, brand → country) to scope the whole app to another layer.
+3. **Schedule → Run now** executes a full pricing cycle for the current layer (pull → snapshot → propose).
+4. **Proposals** — review, filter, approve (changes >±20% require explicit confirmation), then
    **Push** writes the approved-prices CSV to `exports/` (the v1 integration point).
-4. **Dashboard** — margin/revenue/volume trends vs baseline, algorithm/band attribution, health flags.
+5. **Dashboard** — margin/revenue/volume trends vs baseline, algorithm/band attribution, health flags.
 
 The Engine worker (`dotnet run --project PricingTool.Engine`) is only needed for *scheduled*
 runs; on-demand runs work from the Web app alone. Both can run side by side — a DB-level guard
-prevents overlapping runs.
+serializes runs.
 
-CLI escape hatch: `dotnet run --project PricingTool.Engine -- --run-now` executes one full
-pricing run immediately (applying migrations/seeding first) and exits — handy for ops, cron,
-and smoke tests.
+CLI escape hatch: `dotnet run --project PricingTool.Engine -- --run-now [--layer <code>]` executes
+one full pricing run immediately (applying migrations/seeding first) and exits. With no `--layer`
+it runs **all active layers** sequentially; `--layer` accepts `MK`, `GjirafaMall/MK`, or the
+display name. Handy for ops, cron, and smoke tests.
 
 ## Production setup
 
@@ -55,21 +88,25 @@ Two connection strings (in `appsettings.json` or environment variables
 - **`PricingToolDb`** — the tool's own database (read/write). All tables live in the
   `PricingTool` schema. Migrations apply automatically on startup
   (or manually: `dotnet ef database update --project PricingTool.Data`).
-- **`SourceReadOnly`** — the live platform server (GjirafaMall + GjirafaTranslations).
-  Use a SQL login with **read-only / execute-only** rights; add `ApplicationIntent=ReadOnly`
-  where applicable. The tool only ever reads from it.
+- **`SourceReadOnly`** — the live platform **server** (hosting `GjirafaMall`, `GjirafaEcommerce`
+  and the shared `GjirafaTranslations`). Use a SQL login with **read-only / execute-only** rights;
+  add `ApplicationIntent=ReadOnly` where applicable. The operational database is selected per layer
+  by substituting the catalog name into the query, so the connection's `InitialCatalog` is
+  irrelevant as long as the login can read all three databases.
 
-No secrets in code — use environment variables or a secret store for real credentials.
+No secrets in code — use environment variables or a secret store for real credentials. (For local
+dev, `EnvFileLoader` reads a gitignored `.env` with `SOURCE_DB_*` values and flips demo mode off.)
 
-### 2. Deploy the dataset stored procedure
+### 2. Deploy the dataset stored procedure (optional)
 
 Run [`scripts/usp_GetDailyPricingDataset.sql`](scripts/usp_GetDailyPricingDataset.sql) on the
-source server and grant `EXECUTE` to the read-only login. This script contains the **required
-fix**: `@now` is captured once and used consistently throughout (the original ad-hoc query
-called `GETUTCDATE()` separately inside the discount `OUTER APPLY`).
+source server and grant `EXECUTE` to the read-only login. It takes the per-layer parameters
+(`@StoreId`, `@TranslationCountryId`, `@WarehouseStoreId`, `@FilterVendors`, `@ExcludeUnpublished`).
 
-If a stored procedure cannot be created, set `SourceDataset:Mode = "InlineQuery"` and the tool
-runs the same corrected query verbatim.
+**Important:** the compiled procedure reads the `GjirafaMall` operational database by name and
+**cannot switch to `GjirafaEcommerce`**, so **Gjirafa50 layers require inline-query mode**. Set
+`SourceDataset:Mode = "InlineQuery"` and the tool runs the same query verbatim, substituting the
+operational database per layer (`{opDb}` token). Inline mode is the source of truth.
 
 ### 3. Turn off demo mode
 
@@ -80,7 +117,8 @@ runs the same corrected query verbatim.
 ### 4. Run
 
 - `PricingTool.Web` — admin UI/dashboard (also serves on-demand runs).
-- `PricingTool.Engine` — host as a Windows service / container for the scheduled daily run.
+- `PricingTool.Engine` — host as a Windows service / container for the scheduled daily runs
+  (iterates active layers).
 
 ## Configuration reference (`PricingEngine` section)
 
@@ -91,27 +129,39 @@ runs the same corrected query verbatim.
 | `NewProductProtectionDays` | `90` | Algorithm 2 window (inactive until a launch-date source exists — open decision) |
 | `ChangeConfirmationThresholdPct` | `20.0` | Proposals beyond ±this % require explicit confirmation at approval (enforced server-side) |
 | `UseDemoData` | `true` | Replace the SQL source reader with the demo generator |
-| `DefaultRunTimeUtc` / `DefaultCadenceHours` | `03:00` / `24` | Seeds the schedule on first boot; afterwards the schedule is edited in the UI (stored in `ToolSettings`) |
+| `SourceDataset:Mode` | `StoredProcedure` | `InlineQuery` runs the query verbatim — **required for Gjirafa50 layers** |
+| `DefaultRunTimeUtc` / `DefaultCadenceHours` | `03:00` / `24` | Seed the schedule on first boot; afterwards each layer's schedule is edited in the UI (stored **per layer** on the `Layers` row) |
 | `PushExportDirectory` | `exports` | Where the v1 CSV push integration writes approved prices |
 
 Per-band knobs (margin floor, discount ceiling, rounding convention + toggle, per-algorithm
-enable/weight 0–100) are **data**, edited on the Price Bands page. Per-SKU rounding opt-outs
-live in `SkuOverrides`.
+enable/weight 0–100) are **data**, edited per layer on the Price Bands page. Per-SKU rounding
+opt-outs live in `SkuOverrides` (scoped per layer).
 
 ## How a pricing run works
 
-1. Pull the daily dataset over the read-only connection (one row per in-scope SKU).
+1. Pull the daily dataset for the layer over the read-only connection (one row per in-scope SKU),
+   scoped by the layer's store/country IDs, vendor filter, and the outlet / unpublished exclusions.
+   Prices come back in the layer's **native currency** (EUR/MKD/ALL) — no FX conversion.
 2. Snapshot the full pull into `DailySnapshots` (history for the dashboard + aging signals;
-   a same-day re-pull replaces that day's snapshot, and proposals keep their own copy of inputs).
+   a same-day re-pull replaces that layer's snapshot for the day, and proposals keep their own copy
+   of inputs).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
    matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
-   band-enabled algorithm → weighted average of votes
-   (band weight × vote confidence) → **guardrail clamp** (margin floor with VAT reconciliation,
-   discount ceiling, OldPrice cap) → **psychological rounding** that never violates the
-   guardrails.
+   band-enabled algorithm → weighted average of votes (band weight × vote confidence) →
+   **guardrail clamp** (margin floor with VAT reconciliation, discount ceiling, OldPrice cap) →
+   **psychological rounding** that never violates the guardrails.
 4. Write `ProposedPrices` + every `AlgorithmVotes` row, wrapped in a `PricingRuns` record
    (status, SKU/error counts) — failures and partial runs stay visible.
 5. Humans take it from there: review → approve → push (CSV export via `IPricePushService`).
+
+### Psychological rounding
+
+Selected per band (per layer), and always clamped inside the band guardrails:
+
+| Convention | Use |
+|---|---|
+| `.99` / `.95` endings, whole number, 995-style (€5 steps) | EUR layers |
+| **…99 whole-currency** (e.g. 6149 → 6199, 9990 → 9999) | MKD / ALL layers — `.99`/`.95` are meaningless for currencies with no minor unit |
 
 ### The 10 algorithms
 
@@ -123,6 +173,23 @@ the price stays unchanged.
 
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
 history: consecutive daily snapshots with zero trailing-7d sales.
+
+## Full-catalog scale
+
+A real run prices the **entire** catalog (~660k in-scope SKUs per GjirafaMall layer after the
+outlet filter), so the write/read path is built for volume:
+
+- Snapshots, proposals and votes are written via **`SqlBulkCopy`** (`BulkWriteService`), not EF
+  row-by-row. A full live run completes in a few minutes.
+- The same-date snapshot replace **batches** its delete (50k/iteration) and all run-path SQL runs
+  on a 600s command timeout (the run's DbContext is scoped, so the web UI keeps fast-fail timeouts).
+- The Proposals listing sorts by change magnitude via a DB-computed `AbsChangePct` column + index,
+  so "top 500 by magnitude" is an index range scan, not a half-million-row live sort.
+- Outcome evaluation batch-loads each pushed SKU's snapshot history once (no per-proposal N+1).
+
+> Known follow-up: `GetZeroSaleStreaksAsync` still materializes snapshot history in memory — fine
+> now, but it should move server-side before many months of daily full-catalog history accumulate.
+> Full-catalog daily runs also grow `PricingToolDb` by ~1.4M+ rows/run (a retention policy is TBD).
 
 ## Authentication
 
@@ -153,12 +220,14 @@ dotnet test
    configuration via per-band algorithm weights.
 2. **Product launch/creation date source** — dataset has none; the snapshot column is nullable
    and Algorithm 2 stays silent until it's populated.
-3. **Final price band boundaries** — seeded €0–10 / 10–50 / 50–100 / 100–250 / 250–500 /
-   500–750 / 750–1,000 / 1,000+ are **placeholders**; bands 2–7 must be confirmed before go-live
-   (editable in the UI).
-4. **Competitor pricing** — phase 2 (no competitor data in the dataset). Seasonality likewise
-   phase 2 (needs >90d of accumulated snapshots — which this tool is now collecting).
-5. **Smoothing limits** beyond the ±20% confirmation threshold — not implemented in v1.
+3. **Price band boundaries** — seeded €0–10 … 1,000+ are **placeholders** (editable per layer);
+   bands for MKD/ALL layers are seeded with the same numeric structure and should be **retuned in
+   each currency** before go-live.
+4. **Live-source verification for non-KS layers** — the MK/AL/Gjirafa50 store/country IDs are as
+   provided; confirm them (and that `Product.IsOutlet` / `UnpublishedStoreids` exist in both
+   operational DBs) with a real run per layer before relying on them.
+5. **Competitor pricing / seasonality** — phase 2 (no competitor data; seasonality needs >90d of
+   accumulated snapshots, which this tool is now collecting).
 6. **Push mechanism into NopCommerce** — `IPricePushService` is the integration point; v1 ships
    `CsvPricePushService` (file export). The platform team replaces the DI registration in
    `PricingTool.Data/DependencyInjection.cs` when the real write-back mechanism is decided.
@@ -167,6 +236,6 @@ dotnet test
 
 1. Engine writes proposals only; the push step is explicit, human, Manager-gated.
 2. Source data via a dedicated read-only connection; tool tables in their own DB/schema.
-3. Every pull snapshotted (`DailySnapshots`).
-4. Every config change and every push audited (who/what/when/old/new) — Audit Log page.
+3. Every pull snapshotted (`DailySnapshots`), scoped per layer.
+4. Every config change and every push audited (who/what/when/old/new, with layer) — Audit Log page.
 5. Every run wrapped in a `PricingRuns` record with status and error counts.
