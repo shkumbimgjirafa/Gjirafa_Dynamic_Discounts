@@ -2,6 +2,7 @@
 @using System.Text.Json
 @{
     ViewData["Title"] = $"SKU {Model.Sku}";
+    var cur = ViewData.CurrencyCode();
     var labels = JsonSerializer.Serialize(Model.History.Select(h => h.Date.ToString("MM-dd")));
     var prices = JsonSerializer.Serialize(Model.History.Select(h => h.CurrentPrice));
     var oldPrices = JsonSerializer.Serialize(Model.History.Select(h => h.OldPrice));
@@ -15,7 +16,7 @@
     <dl class="row mb-4">
         <dt class="col-sm-2">Latest snapshot</dt><dd class="col-sm-10">@Model.Latest.SnapshotDate.ToString("yyyy-MM-dd")</dd>
         <dt class="col-sm-2">Prices</dt>
-        <dd class="col-sm-10">Old €@(Model.Latest.OldPrice?.ToString("0.00") ?? "–") · Current €@(Model.Latest.CurrentPrice?.ToString("0.00") ?? "–")
+        <dd class="col-sm-10">Old @(Model.Latest.OldPrice?.ToString("0.00") ?? "–") @cur · Current @(Model.Latest.CurrentPrice?.ToString("0.00") ?? "–") @cur
             · Discount @(Model.Latest.CurrentDiscountPct?.ToString("P1") ?? "–")</dd>
         <dt class="col-sm-2">Cost / margin</dt>
         <dd class="col-sm-10">PPTCV @(Model.Latest.Pptcv?.ToString("0.00") ?? "NULL ⚠") · GrossMargin @(Model.Latest.GrossMargin?.ToString("0.##") ?? "NULL")%</dd>
@@ -23,7 +24,7 @@
         <dd class="col-sm-10">Local @Model.Latest.LocalWarehouseStock · Supplier @Model.Latest.SupplierWarehouseStock</dd>
         <dt class="col-sm-2">Sales (7/30/90d)</dt>
         <dd class="col-sm-10">@Model.Latest.Qty7 / @Model.Latest.Qty30 / @Model.Latest.Qty90 units ·
-            €@Model.Latest.Net7.ToString("0.00") / €@Model.Latest.Net30.ToString("0.00") / €@Model.Latest.Net90.ToString("0.00") net (excl. VAT)</dd>
+            @Model.Latest.Net7.ToString("0.00") / @Model.Latest.Net30.ToString("0.00") / @Model.Latest.Net90.ToString("0.00") @cur net (excl. VAT)</dd>
     </dl>
 }
 
@@ -44,7 +45,7 @@
             <span>Run <a asp-controller="Proposals" asp-action="Index" asp-route-runId="@item.Run.Id">#@item.Run.Id</a>
                 — @item.Run.StartedUtc.ToString("u")</span>
             <span>
-                €@item.Proposal.CurrentPrice.ToString("0.00") → <strong>€@item.Proposal.ProposedPriceValue.ToString("0.00")</strong>
+                @item.Proposal.CurrentPrice.ToString("0.00") → <strong>@item.Proposal.ProposedPriceValue.ToString("0.00") @cur</strong>
                 (@item.Proposal.ChangePct.ToString("+0.##;-0.##;0")%)
                 <span class="badge @(item.Proposal.Status switch {
                     ProposalStatus.Approved => "bg-success", ProposalStatus.Rejected => "bg-danger",
@@ -60,7 +61,7 @@
             else if (item.Proposal.Votes.Any())
             {
                 <table class="table table-sm mb-1">
-                    <thead><tr><th>Algorithm</th><th class="text-end">Suggested €</th><th class="text-end">Confidence</th>
+                    <thead><tr><th>Algorithm</th><th class="text-end">Suggested @cur</th><th class="text-end">Confidence</th>
                         <th class="text-end">Weight</th><th class="text-end">Effective</th><th>Reason</th></tr></thead>
                     <tbody>
                     @foreach (var vote in item.Proposal.Votes.OrderByDescending(v => v.EffectiveWeight))
@@ -101,8 +102,8 @@
     new Chart(document.getElementById('priceChart'), {
         type: 'line',
         data: { labels, datasets: [
-            { label: 'Current €', data: @Html.Raw(prices), borderColor: '#0d6efd', tension: .2, pointRadius: 0 },
-            { label: 'Old (shelf) €', data: @Html.Raw(oldPrices), borderColor: '#adb5bd', borderDash: [6, 4], tension: .2, pointRadius: 0 }
+            { label: 'Current @cur', data: @Html.Raw(prices), borderColor: '#0d6efd', tension: .2, pointRadius: 0 },
+            { label: 'Old (shelf) @cur', data: @Html.Raw(oldPrices), borderColor: '#adb5bd', borderDash: [6, 4], tension: .2, pointRadius: 0 }
         ]},
         options: { scales: { x: { ticks: { maxTicksLimit: 12 } } } }
     });

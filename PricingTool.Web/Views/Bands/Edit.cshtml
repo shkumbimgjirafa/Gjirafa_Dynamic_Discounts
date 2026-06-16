@@ -3,6 +3,7 @@
     ViewData["Title"] = $"Band — {Model.Name}";
     var isManager = User.IsInRole("Manager");
     var fieldsDisabled = isManager ? null : "disabled";
+    var cur = ViewData.CurrencyCode();
 }
 
 <h1 class="h3">@(isManager ? "Edit" : "View") band: @Model.Name</h1>
@@ -19,11 +20,11 @@
             <input asp-for="Name" class="form-control" disabled="@fieldsDisabled" />
         </div>
         <div class="col-md-2">
-            <label class="form-label">Min price (€, incl.)</label>
+            <label class="form-label">Min cost / PPTCV (@cur, incl.)</label>
             <input asp-for="MinPrice" type="number" step="0.01" class="form-control" disabled="@fieldsDisabled" />
         </div>
         <div class="col-md-2">
-            <label class="form-label">Max price (€, excl.)</label>
+            <label class="form-label">Max cost / PPTCV (@cur, excl.)</label>
             <input asp-for="MaxPrice" type="number" step="0.01" class="form-control" disabled="@fieldsDisabled" />
             <span asp-validation-for="MaxPrice" class="text-danger"></span>
         </div>
@@ -32,12 +33,6 @@
             <input asp-for="MarginFloorPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
             <span asp-validation-for="MarginFloorPct" class="text-danger"></span>
             <small class="text-muted">hard min margin on net price</small>
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">Discount ceiling %</label>
-            <input asp-for="DiscountCeilingPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
-            <span asp-validation-for="DiscountCeilingPct" class="text-danger"></span>
-            <small class="text-muted">max off OldPrice</small>
         </div>
     </div>
     <div class="row g-3 mb-4">
@@ -48,7 +43,7 @@
                 <option value="1">.99 endings</option>
                 <option value="2">.95 endings</option>
                 <option value="3">Whole number</option>
-                <option value="4">995-style (€5 steps; 1000→995)</option>
+                <option value="4">995-style (5 @cur steps; 1000→995)</option>
                 <option value="5">…99 endings (whole-currency; e.g. 6199, 9999)</option>
             </select>
         </div>

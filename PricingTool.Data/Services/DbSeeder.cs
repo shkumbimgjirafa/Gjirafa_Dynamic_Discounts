@@ -39,17 +39,17 @@ public static class DbSeeder
         ("Gjirafa50",   "AL", "Gjirafa50 — Albania",           "GjirafaEcommerce", 3, 2, 3, "ALL", false),
     };
 
-    /// <summary>Band seed defaults (currency-agnostic). Margin floors / discount ceilings are conservative starting points.</summary>
-    private static readonly (string Name, decimal Min, decimal Max, decimal MarginFloor, decimal DiscountCeiling, RoundingConvention Rounding)[] BandSeeds =
+    /// <summary>Band seed defaults (currency-agnostic). Margin floors are conservative starting points.</summary>
+    private static readonly (string Name, decimal Min, decimal Max, decimal MarginFloor, RoundingConvention Rounding)[] BandSeeds =
     {
-        ("0–10",        0m,    10m,     8m,  50m, RoundingConvention.EndsIn99),
-        ("10–50",       10m,   50m,    10m,  45m, RoundingConvention.EndsIn99),
-        ("50–100",      50m,   100m,   10m,  40m, RoundingConvention.EndsIn99),
-        ("100–250",     100m,  250m,   12m,  35m, RoundingConvention.EndsIn99),
-        ("250–500",     250m,  500m,   12m,  30m, RoundingConvention.WholeEuro),
-        ("500–750",     500m,  750m,   12m,  25m, RoundingConvention.WholeEuro),
-        ("750–1,000",   750m,  1000m,  12m,  25m, RoundingConvention.WholeEuro),
-        ("1,000+",      1000m, 999999m,15m,  20m, RoundingConvention.Charm995),
+        ("0–10",        0m,    10m,     8m, RoundingConvention.EndsIn99),
+        ("10–50",       10m,   50m,    10m, RoundingConvention.EndsIn99),
+        ("50–100",      50m,   100m,   10m, RoundingConvention.EndsIn99),
+        ("100–250",     100m,  250m,   12m, RoundingConvention.EndsIn99),
+        ("250–500",     250m,  500m,   12m, RoundingConvention.WholeEuro),
+        ("500–750",     500m,  750m,   12m, RoundingConvention.WholeEuro),
+        ("750–1,000",   750m,  1000m,  12m, RoundingConvention.WholeEuro),
+        ("1,000+",      1000m, 999999m,15m, RoundingConvention.Charm995),
     };
 
     public static async Task SeedCoreAsync(PricingToolDbContext db, PricingEngineOptions options, CancellationToken ct = default)
@@ -103,7 +103,6 @@ public static class DbSeeder
                     MinPrice = seed.Min,
                     MaxPrice = seed.Max,
                     MarginFloorPct = seed.MarginFloor,
-                    DiscountCeilingPct = seed.DiscountCeiling,
                     RoundingConvention = (int)rounding,
                     RoundingEnabled = true,
                     SortOrder = sort++,

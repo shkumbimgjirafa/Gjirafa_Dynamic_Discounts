@@ -89,7 +89,7 @@ public class PriceCalculatorTests
         new(new WeightedScoringService(), new GuardrailService(), new RoundingService());
 
     private static PriceBandConfig BandWith(
-        decimal floor, decimal ceiling, RoundingConvention rounding, bool roundingEnabled,
+        decimal floor, RoundingConvention rounding, bool roundingEnabled,
         params (string code, bool enabled, int weight)[] settings) =>
         new PriceBandConfig
         {
@@ -98,7 +98,6 @@ public class PriceCalculatorTests
             MinPrice = 0,
             MaxPrice = 999999,
             MarginFloorPct = floor,
-            DiscountCeilingPct = ceiling,
             Rounding = rounding,
             RoundingEnabled = roundingEnabled,
             Algorithms = settings.ToDictionary(s => s.code, s => new BandAlgorithmConfig(s.enabled, s.weight)),
@@ -107,7 +106,7 @@ public class PriceCalculatorTests
     [Fact]
     public void Decide_NoVotes_PriceStaysUnchanged()
     {
-        var band = BandWith(10, 40, RoundingConvention.EndsIn99, true, ("A", true, 50));
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 50));
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 87.31m, band: band);
         var decision = NewCalculator().Decide(ctx, new[] { new FakeAlgorithm("A", null) });
 
@@ -119,7 +118,7 @@ public class PriceCalculatorTests
     [Fact]
     public void Decide_DisabledAlgorithm_IsNeverEvaluated()
     {
-        var band = BandWith(10, 40, RoundingConvention.None, false, ("A", false, 50));
+        var band = BandWith(10, RoundingConvention.None, false, ("A", false, 50));
         var ctx = TestData.Ctx(band: band);
         var decision = NewCalculator().Decide(ctx, new[] { new FakeAlgorithm("A", new AlgorithmVote(50m, 1m, "R", "")) });
 
@@ -132,7 +131,7 @@ public class PriceCalculatorTests
     {
         // Vote 60 → margin floor (cost 50, floor 20%, VAT 18%) forces 73.75 → .99 rounding
         // must go UP to 73.99 (73.-something down candidate 72.99 would breach the floor).
-        var band = BandWith(20, 90, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var band = BandWith(20, RoundingConvention.EndsIn99, true, ("A", true, 100));
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, band: band);
 
         var decision = NewCalculator().Decide(ctx, new[] { new FakeAlgorithm("A", new AlgorithmVote(60m, 1m, "R", "")) });
@@ -147,7 +146,7 @@ public class PriceCalculatorTests
     [Fact]
     public void Decide_PerSkuRoundingOptOut_SkipsRounding()
     {
-        var band = BandWith(10, 90, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 100));
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
             band: band, roundingDisabledForSku: true);
 
@@ -159,7 +158,7 @@ public class PriceCalculatorTests
     [Fact]
     public void Decide_ReasonCodes_OrderedByEffectiveWeight()
     {
-        var band = BandWith(10, 90, RoundingConvention.None, false, ("A", true, 20), ("B", true, 90));
+        var band = BandWith(10, RoundingConvention.None, false, ("A", true, 20), ("B", true, 90));
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m, band: band);
 
         var decision = NewCalculator().Decide(ctx, new IPricingAlgorithm[]

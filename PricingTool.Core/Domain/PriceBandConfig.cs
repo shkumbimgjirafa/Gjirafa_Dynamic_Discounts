@@ -17,9 +17,6 @@ public class PriceBandConfig
     /// <summary>Hard minimum margin, in percent of the VAT-exclusive selling price (e.g. 12 = 12%).</summary>
     public decimal MarginFloorPct { get; init; }
 
-    /// <summary>Hard maximum discount off OldPrice, in percent (e.g. 40 = price never below 60% of OldPrice).</summary>
-    public decimal DiscountCeilingPct { get; init; }
-
     public RoundingConvention Rounding { get; init; } = RoundingConvention.None;
     public bool RoundingEnabled { get; init; } = true;
 

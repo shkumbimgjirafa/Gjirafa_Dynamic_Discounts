@@ -133,7 +133,7 @@ operational database per layer (`{opDb}` token). Inline mode is the source of tr
 | `DefaultRunTimeUtc` / `DefaultCadenceHours` | `03:00` / `24` | Seed the schedule on first boot; afterwards each layer's schedule is edited in the UI (stored **per layer** on the `Layers` row) |
 | `PushExportDirectory` | `exports` | Where the v1 CSV push integration writes approved prices |
 
-Per-band knobs (margin floor, discount ceiling, rounding convention + toggle, per-algorithm
+Per-band knobs (margin floor, rounding convention + toggle, per-algorithm
 enable/weight 0–100) are **data**, edited per layer on the Price Bands page. Per-SKU rounding
 opt-outs live in `SkuOverrides` (scoped per layer).
 
@@ -148,7 +148,7 @@ opt-outs live in `SkuOverrides` (scoped per layer).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
    matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
    band-enabled algorithm → weighted average of votes (band weight × vote confidence) →
-   **guardrail clamp** (margin floor with VAT reconciliation, discount ceiling, OldPrice cap) →
+   **guardrail clamp** (margin floor with VAT reconciliation + OldPrice cap; no discount ceiling) →
    **psychological rounding** that never violates the guardrails.
 4. Write `ProposedPrices` + every `AlgorithmVotes` row, wrapped in a `PricingRuns` record
    (status, SKU/error counts) — failures and partial runs stay visible.

@@ -23,7 +23,6 @@ public static class ReasonCodeText
         ["MISSING_PRICE"] = "No usable shelf price — skipped",
         ["NO_BAND"] = "No matching price band — skipped",
         ["MARGIN_FLOOR_CLAMPED"] = "Raised to margin floor",
-        ["DISCOUNT_CEILING_CLAMPED"] = "Raised to discount ceiling",
         ["CAPPED_AT_OLD_PRICE"] = "Capped at full shelf price",
         ["MARGIN_FLOOR_ABOVE_OLD_PRICE"] = "⚠ Even full price misses margin floor",
         ["ROUNDING_SKIPPED_OUT_OF_BOUNDS"] = "Rounding skipped (would breach guardrail)",

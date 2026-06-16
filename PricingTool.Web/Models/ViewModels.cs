@@ -79,7 +79,6 @@ public class BandEditModel
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }
     public decimal MarginFloorPct { get; set; }
-    public decimal DiscountCeilingPct { get; set; }
     public int RoundingConvention { get; set; }
     public bool RoundingEnabled { get; set; }
     public List<BandAlgorithmEditModel> Algorithms { get; set; } = new();

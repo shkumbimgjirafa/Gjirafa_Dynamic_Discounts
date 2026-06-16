@@ -26,7 +26,6 @@ public class BandConfigProvider
             MinPrice = b.MinPrice,
             MaxPrice = b.MaxPrice,
             MarginFloorPct = b.MarginFloorPct,
-            DiscountCeilingPct = b.DiscountCeilingPct,
             Rounding = (RoundingConvention)b.RoundingConvention,
             RoundingEnabled = b.RoundingEnabled,
             Algorithms = b.AlgorithmSettings.ToDictionary(

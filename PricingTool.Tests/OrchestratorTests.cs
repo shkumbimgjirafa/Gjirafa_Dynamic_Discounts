@@ -86,7 +86,7 @@ public class OrchestratorTests
         {
             LayerId = layerId,
             Name = "test", MinPrice = min, MaxPrice = max,
-            MarginFloorPct = 10, DiscountCeilingPct = 40,
+            MarginFloorPct = 10,
             RoundingConvention = 0, RoundingEnabled = false, SortOrder = 0,
         };
         foreach (var (code, _, weight) in AlgorithmCodes.All)

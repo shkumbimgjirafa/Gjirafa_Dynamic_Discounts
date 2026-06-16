@@ -7,25 +7,24 @@ public record PriceBounds(decimal Lower, decimal Upper);
 public record ClampResult(decimal Price, IReadOnlyList<string> Flags);
 
 /// <summary>
-/// Hard filters applied after scoring and before rounding: margin floor and discount ceiling
-/// define the lower bound; OldPrice caps the top (the tool proposes discounts, not price raises
-/// above the shelf price).
+/// Hard filters applied after scoring and before rounding: the margin floor defines the lower
+/// bound; OldPrice caps the top (the tool proposes discounts, not price raises above the shelf
+/// price). There is no discount ceiling — discounts may go as deep as the margin floor allows.
 /// </summary>
 public class GuardrailService
 {
     /// <summary>
-    /// Lower bound = max(margin-floor price, OldPrice × (1 − discount ceiling)).
+    /// Lower bound = the margin-floor price (0 when cost is unknown).
     /// Upper bound = OldPrice, unless the margin floor itself exceeds OldPrice
     /// (mispriced SKU) in which case the margin floor wins — margin is non-negotiable.
     /// </summary>
     public PriceBounds GetBounds(SkuContext ctx)
     {
-        var discountFloor = ctx.OldPrice * (1m - ctx.Band.DiscountCeilingPct / 100m);
         var marginFloor = ctx.Pptcv.HasValue
             ? VatMath.MinGrossPriceForMargin(ctx.Pptcv.Value, ctx.Band.MarginFloorPct, ctx.Options.VatRatePct)
             : 0m;
 
-        var lower = Math.Max(discountFloor, marginFloor);
+        var lower = marginFloor;
         var upper = Math.Max(ctx.OldPrice, lower);
         return new PriceBounds(lower, upper);
     }
@@ -34,7 +33,6 @@ public class GuardrailService
     {
         var flags = new List<string>();
 
-        var discountFloor = ctx.OldPrice * (1m - ctx.Band.DiscountCeilingPct / 100m);
         var marginFloor = ctx.Pptcv.HasValue
             ? VatMath.MinGrossPriceForMargin(ctx.Pptcv.Value, ctx.Band.MarginFloorPct, ctx.Options.VatRatePct)
             : 0m;
@@ -45,12 +43,6 @@ public class GuardrailService
         {
             price = marginFloor;
             flags.Add(GuardrailFlags.MarginFloorClamped);
-        }
-
-        if (price < discountFloor)
-        {
-            price = discountFloor;
-            flags.Add(GuardrailFlags.DiscountCeilingClamped);
         }
 
         if (price > ctx.OldPrice)

@@ -149,7 +149,6 @@ public class PricingToolDbContext : DbContext
             e.Property(x => x.MinPrice).HasPrecision(18, 2);
             e.Property(x => x.MaxPrice).HasPrecision(18, 2);
             e.Property(x => x.MarginFloorPct).HasPrecision(9, 4);
-            e.Property(x => x.DiscountCeilingPct).HasPrecision(9, 4);
         });
 
         builder.Entity<BandAlgorithmSetting>(e =>

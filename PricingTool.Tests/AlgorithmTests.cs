@@ -262,12 +262,13 @@ public class DeadStockTests
     }
 
     [Fact]
-    public void Markdown_WalksTowardCeilingButTargetCapsThere()
+    public void Markdown_DeepensWithoutCeiling_LongStreakGoesDeep()
     {
+        // 200 streak days → 14 steps → 10% + 14×5pp = 80% off. No discount ceiling caps the
+        // suggestion; the margin-floor guardrail (applied later in the pipeline) sets the real limit.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10,
-            qty90: 0, zeroSaleStreakDays: 200,
-            band: TestData.Band(discountCeilingPct: 15m));
-        Assert.Equal(85m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+            qty90: 0, zeroSaleStreakDays: 200);
+        Assert.Equal(20m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
     }
 
     [Fact]

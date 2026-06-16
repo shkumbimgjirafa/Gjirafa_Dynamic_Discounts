@@ -59,8 +59,6 @@ public class BandsController : Controller
             ModelState.AddModelError(nameof(model.MaxPrice), "Max must be greater than min.");
         if (model.MarginFloorPct is < 0 or >= 100)
             ModelState.AddModelError(nameof(model.MarginFloorPct), "Margin floor must be in [0, 100).");
-        if (model.DiscountCeilingPct is < 0 or > 90)
-            ModelState.AddModelError(nameof(model.DiscountCeilingPct), "Discount ceiling must be in [0, 90].");
         foreach (var algorithm in model.Algorithms)
         {
             if (algorithm.Weight is < 0 or > 100)
@@ -74,7 +72,6 @@ public class BandsController : Controller
         band.MinPrice = model.MinPrice;
         band.MaxPrice = model.MaxPrice;
         band.MarginFloorPct = model.MarginFloorPct;
-        band.DiscountCeilingPct = model.DiscountCeilingPct;
         band.RoundingConvention = model.RoundingConvention;
         band.RoundingEnabled = model.RoundingEnabled;
 
@@ -109,7 +106,6 @@ public class BandsController : Controller
             MinPrice = band.MinPrice,
             MaxPrice = band.MaxPrice,
             MarginFloorPct = band.MarginFloorPct,
-            DiscountCeilingPct = band.DiscountCeilingPct,
             RoundingConvention = band.RoundingConvention,
             RoundingEnabled = band.RoundingEnabled,
             Algorithms = AlgorithmCodes.All.Select(a =>
@@ -132,7 +128,6 @@ public class BandsController : Controller
         band.MinPrice,
         band.MaxPrice,
         band.MarginFloorPct,
-        band.DiscountCeilingPct,
         band.RoundingConvention,
         band.RoundingEnabled,
         Algorithms = band.AlgorithmSettings

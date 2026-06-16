@@ -2,6 +2,7 @@
 @using System.Text.Json
 @{
     ViewData["Title"] = "Impact Dashboard";
+    var cur = ViewData.CurrencyCode();
     var labels = JsonSerializer.Serialize(Model.Trend.Select(t => t.Date.ToString("MM-dd")));
     var margins = JsonSerializer.Serialize(Model.Trend.Select(t => t.MarginPct));
     var revenue = JsonSerializer.Serialize(Model.Trend.Select(t => t.NetRevenuePerDay));
@@ -49,8 +50,8 @@
         <div class="card h-100">
             <div class="card-body">
                 <h6 class="text-muted">Net revenue / day (7d basis)</h6>
-                <div class="fs-3">€@(Model.Recent?.NetRevenuePerDay.ToString("N0") ?? "–")</div>
-                <small class="text-muted">baseline €@(Model.Baseline?.NetRevenuePerDay.ToString("N0") ?? "–") · excl. VAT</small>
+                <div class="fs-3">@(Model.Recent?.NetRevenuePerDay.ToString("N0") ?? "–") @cur</div>
+                <small class="text-muted">baseline @(Model.Baseline?.NetRevenuePerDay.ToString("N0") ?? "–") @cur · excl. VAT</small>
             </div>
         </div>
     </div>
@@ -78,7 +79,7 @@
         <h6>Margin % (daily, 7d window)</h6><canvas id="marginChart" height="200"></canvas>
     </div></div></div>
     <div class="col-lg-4"><div class="card"><div class="card-body">
-        <h6>Net revenue €/day</h6><canvas id="revenueChart" height="200"></canvas>
+        <h6>Net revenue @cur/day</h6><canvas id="revenueChart" height="200"></canvas>
     </div></div></div>
     <div class="col-lg-4"><div class="card"><div class="card-body">
         <h6>Units sold /day</h6><canvas id="unitsChart" height="200"></canvas>
@@ -174,13 +175,13 @@ else
                         }
                         else if (s.Intent == ChangeIntent.MarginCapture)
                         {
-                            <div class="fs-3">€@(s.AvgDeltaGrossProfitPerDay?.ToString("+0.##;-0.##") ?? "–")<small class="text-muted fs-6"> profit/day</small></div>
+                            <div class="fs-3">@(s.AvgDeltaGrossProfitPerDay?.ToString("+0.##;-0.##") ?? "–") @cur<small class="text-muted fs-6"> profit/day</small></div>
                             <small class="text-muted">@s.Wins/@s.Total wins (@s.WinRatePct.ToString("0")%) · units @(s.AvgDeltaUnitsPerDay.ToString("+0.#;-0.#"))/day</small>
                         }
                         else
                         {
                             <div class="fs-3">@(s.AvgDeltaUnitsPerDay.ToString("+0.#;-0.#"))<small class="text-muted fs-6"> units/day</small></div>
-                            <small class="text-muted">@s.Wins/@s.Total wins (@s.WinRatePct.ToString("0")%) · profit €@(s.AvgDeltaGrossProfitPerDay?.ToString("+0.##;-0.##") ?? "–")/day</small>
+                            <small class="text-muted">@s.Wins/@s.Total wins (@s.WinRatePct.ToString("0")%) · profit @(s.AvgDeltaGrossProfitPerDay?.ToString("+0.##;-0.##") ?? "–") @cur/day</small>
                         }
                     </div>
                 </div>
@@ -193,7 +194,7 @@ else
             <div class="card h-100"><div class="card-body">
                 <h6>Biggest wins</h6>
                 <table class="table table-sm">
-                    <thead><tr><th>SKU</th><th>Intent</th><th class="text-end">Δ units/day</th><th class="text-end">Δ €/day</th></tr></thead>
+                    <thead><tr><th>SKU</th><th>Intent</th><th class="text-end">Δ units/day</th><th class="text-end">Δ @cur/day</th></tr></thead>
                     <tbody>
                     @foreach (var o in Model.TopWins)
                     {
@@ -213,7 +214,7 @@ else
             <div class="card h-100"><div class="card-body">
                 <h6>Worst backfires</h6>
                 <table class="table table-sm">
-                    <thead><tr><th>SKU</th><th>Intent</th><th class="text-end">Δ units/day</th><th class="text-end">Δ €/day</th></tr></thead>
+                    <thead><tr><th>SKU</th><th>Intent</th><th class="text-end">Δ units/day</th><th class="text-end">Δ @cur/day</th></tr></thead>
                     <tbody>
                     @foreach (var o in Model.WorstBackfires)
                     {

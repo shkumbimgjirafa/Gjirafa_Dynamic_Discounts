@@ -9,7 +9,6 @@ public static class TestData
 {
     public static PriceBandConfig Band(
         decimal marginFloorPct = 10m,
-        decimal discountCeilingPct = 40m,
         RoundingConvention rounding = RoundingConvention.None,
         bool roundingEnabled = false,
         Dictionary<string, BandAlgorithmConfig>? algorithms = null)
@@ -24,7 +23,6 @@ public static class TestData
             MinPrice = 0,
             MaxPrice = 999999,
             MarginFloorPct = marginFloorPct,
-            DiscountCeilingPct = discountCeilingPct,
             Rounding = rounding,
             RoundingEnabled = roundingEnabled,
             Algorithms = algorithms,

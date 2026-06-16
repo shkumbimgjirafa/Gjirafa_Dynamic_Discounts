@@ -3,6 +3,7 @@
     ViewData["Title"] = "Proposals Review";
     var f = Model.Filter;
     var isManager = User.IsInRole("Manager");
+    var cur = ViewData.CurrencyCode();
 }
 
 <div class="d-flex justify-content-between align-items-center">
@@ -112,8 +113,8 @@
             <tr>
                 @if (isManager) { <th><input type="checkbox" id="checkAll" /></th> }
                 <th>SKU</th><th>Band</th>
-                <th class="text-end">Cost €</th>
-                <th class="text-end">Old €</th><th class="text-end">Current €</th><th class="text-end">Proposed €</th>
+                <th class="text-end">Cost @cur</th>
+                <th class="text-end">Old @cur</th><th class="text-end">Current @cur</th><th class="text-end">Proposed @cur</th>
                 <th class="text-end">Δ%</th>
                 <th>Reasons</th><th>Guardrails</th><th>Status</th>
             </tr>

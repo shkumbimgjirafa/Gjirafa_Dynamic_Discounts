@@ -14,7 +14,6 @@ public record WeightedVote(
 public static class GuardrailFlags
 {
     public const string MarginFloorClamped = "MARGIN_FLOOR_CLAMPED";
-    public const string DiscountCeilingClamped = "DISCOUNT_CEILING_CLAMPED";
     public const string CappedAtOldPrice = "CAPPED_AT_OLD_PRICE";
     /// <summary>Even OldPrice violates the margin floor — SKU is fundamentally mispriced; needs human attention.</summary>
     public const string MarginFloorAboveOldPrice = "MARGIN_FLOOR_ABOVE_OLD_PRICE";
