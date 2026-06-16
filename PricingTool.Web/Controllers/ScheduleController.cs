@@ -32,18 +32,19 @@ public class ScheduleController : Controller
     {
         var layerId = await _layers.RequireCurrentIdAsync();
         var info = await _schedule.GetAsync(layerId);
+        // Ignore stale orphans (a run whose process was killed mid-run): they read as Running in the
+        // DB but aren't executing, and the next trigger's stale-run cleanup will fail them out.
+        // Computed as a local so EF parameterizes it (inline DateTime arithmetic can't be translated).
+        var staleCutoff = DateTime.UtcNow - PricingRunOrchestrator.StaleRunCutoff;
         var model = new ScheduleViewModel
         {
             RunTimeUtc = info.RunTimeUtc.ToString("HH:mm"),
             CadenceHours = info.CadenceHours,
             LastScheduledRunUtc = info.LastScheduledRunUtc,
             NextRunUtc = ScheduleService.ComputeNextRun(info, DateTime.UtcNow),
-            // Runs are serialized globally, so any run in progress blocks this layer's "Run now".
-            // Ignore stale orphans (a run whose process was killed mid-run): they read as Running in
-            // the DB but aren't executing, and the next trigger's stale-run cleanup will fail them out.
+            // Runs are serialized globally, so any (non-stale) run in progress blocks this layer's "Run now".
             RunInProgress = _launcher.IsRunning ||
-                await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running &&
-                    r.StartedUtc >= DateTime.UtcNow - PricingRunOrchestrator.StaleRunCutoff),
+                await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running && r.StartedUtc >= staleCutoff),
             RecentRuns = await _db.PricingRuns.Where(r => r.LayerId == layerId).OrderByDescending(r => r.Id).Take(10).ToListAsync(),
         };
         return View(model);
