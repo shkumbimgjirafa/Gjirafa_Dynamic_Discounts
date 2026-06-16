@@ -51,6 +51,9 @@ public class ProposalsFilter
     public long? RunId { get; set; }
     public int? BandId { get; set; }
     public string? Algorithm { get; set; }
+
+    /// <summary>Free-text SKU search (substring match), scoped within the selected run.</summary>
+    public string? Sku { get; set; }
     public decimal? MinAbsChangePct { get; set; }
     public string Status { get; set; } = "Pending";
     public bool ChangedOnly { get; set; } = true;

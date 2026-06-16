@@ -34,6 +34,10 @@
         </select>
     </div>
     <div class="col-auto">
+        <label class="form-label mb-0">SKU</label>
+        <input type="search" name="Sku" value="@f.Sku" class="form-control form-control-sm" style="width:170px" placeholder="search SKU…" />
+    </div>
+    <div class="col-auto">
         <label class="form-label mb-0">Band</label>
         <select name="BandId" class="form-select form-select-sm">
             <option value="">All</option>
@@ -88,6 +92,7 @@
     <input type="hidden" name="runId" value="@Model.Run.Id" />
     <input type="hidden" name="BandId" value="@f.BandId" />
     <input type="hidden" name="Algorithm" value="@f.Algorithm" />
+    <input type="hidden" name="Sku" value="@f.Sku" />
     <input type="hidden" name="MinAbsChangePct" value="@f.MinAbsChangePct" />
     <input type="hidden" name="Status" value="@f.Status" />
     <input type="hidden" name="ChangedOnly" value="@f.ChangedOnly.ToString().ToLower()" />

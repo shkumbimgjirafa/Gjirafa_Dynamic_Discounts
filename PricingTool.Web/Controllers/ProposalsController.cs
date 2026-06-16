@@ -81,6 +81,12 @@ public class ProposalsController : Controller
         var query = _db.ProposedPrices.AsQueryable()
             .Where(p => p.PricingRunId == filter.RunId);
 
+        if (!string.IsNullOrWhiteSpace(filter.Sku))
+        {
+            var term = filter.Sku.Trim();
+            query = query.Where(p => p.Sku.Contains(term));
+        }
+
         if (Enum.TryParse<ProposalStatus>(filter.Status, out var status))
             query = query.Where(p => p.Status == status);
 
@@ -266,6 +272,7 @@ public class ProposalsController : Controller
             RunId = runId,
             filter.BandId,
             filter.Algorithm,
+            filter.Sku,
             filter.MinAbsChangePct,
             filter.Status,
             filter.ChangedOnly,
