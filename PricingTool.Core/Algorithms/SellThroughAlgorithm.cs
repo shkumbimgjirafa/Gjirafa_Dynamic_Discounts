@@ -7,13 +7,16 @@ namespace PricingTool.Core.Algorithms;
 /// VELOCITY_FORECAST, STOCKOUT_RISK and MOMENTUM algorithms into one voice, so the same
 /// sales-speed signal is not counted three times in the weighted blend.
 ///
-/// It reads the projected days-to-sellout (level) plus the short-vs-long velocity ratio (trend):
+/// Stock is measured as our LOCALLY-HELD (KS) stock only — supplier stock isn't ours to clear and
+/// is volatile, so it must never drive a markdown. It reads projected days-to-sellout of local stock
+/// (level) plus the short-vs-long velocity ratio (trend):
 ///  - imminent sellout on a healthy margin → remove the discount (don't burn margin on stock that
 ///    will sell out anyway). Never a markdown — capped up to today's price.
 ///  - fast → shave the discount · on pace → hold · slow / overstocked → deepen progressively.
 ///  - a trend modifier then nudges the target shallower when demand is accelerating and deeper
 ///    when it is decelerating.
-/// Silent when there is no stock or no velocity at all — zero-velocity dead stock is DEAD_STOCK's lane.
+/// Silent when we hold no local stock (supplier-only is the guardrail's lane) or there is no velocity
+/// at all (zero-velocity local stock is DEAD_STOCK's lane).
 /// </summary>
 public class SellThroughAlgorithm : IPricingAlgorithm
 {
@@ -25,13 +28,13 @@ public class SellThroughAlgorithm : IPricingAlgorithm
 
     public AlgorithmVote? Evaluate(SkuContext ctx)
     {
-        if (ctx.TotalStock <= 0) return null;
-        if (ctx.DaysToSellout is not decimal days) return null; // zero velocity → dead-stock territory
+        if (ctx.KsStock <= 0) return null;                              // no local stock to clear — supplier-only is the guardrail's lane
+        if (ctx.DaysToSelloutLocal is not decimal days) return null;   // zero velocity → dead-stock territory
 
         var horizon = ctx.Options.StockoutRiskDays;
 
-        // Imminent sellout + healthy margin: discounting it only burns margin — remove the discount.
-        // Math.Max keeps it from ever becoming a markdown (same guard the old Stockout algo used).
+        // Imminent sellout of local stock + healthy margin: discounting it only burns margin — remove
+        // the discount. Math.Max keeps it from ever becoming a markdown (same guard the old Stockout algo used).
         if (days <= horizon &&
             ctx.EffectiveMarginPct is decimal margin &&
             margin >= ctx.Band.MarginFloorPct + HealthyMarginBufferPct)
@@ -41,7 +44,7 @@ public class SellThroughAlgorithm : IPricingAlgorithm
                 Math.Max(ctx.AnchorPrice, ctx.CurrentPrice),
                 removeConfidence,
                 "SELL_THROUGH_REMOVE",
-                $"Projected sellout in ≈{Math.Round(days)} days (≤{horizon}d) at {margin:0.#}% margin — remove the discount.");
+                $"Local stock sells out in ≈{Math.Round(days)} days (≤{horizon}d) at {margin:0.#}% margin — remove the discount.");
         }
 
         var current = ctx.CurrentDiscountFraction;
@@ -49,9 +52,9 @@ public class SellThroughAlgorithm : IPricingAlgorithm
         {
             <= 21  => (Math.Max(0m, current - 0.05m), "fast sell-through — shave the discount"),
             <= 45  => (current,                       "on pace — hold the discount"),
-            <= 90  => (current + 0.03m,               "slow (≤90d of stock) — slightly deeper discount"),
-            <= 180 => (current + 0.06m,               "very slow (≤180d of stock) — deeper discount"),
-            _      => (current + 0.10m,               "over 180d of stock — markdown pressure"),
+            <= 90  => (current + 0.03m,               "slow (≤90d of local stock) — slightly deeper discount"),
+            <= 180 => (current + 0.06m,               "very slow (≤180d of local stock) — deeper discount"),
+            _      => (current + 0.10m,               "over 180d of local stock — markdown pressure"),
         };
 
         // Trend modifier: accelerating demand tempers the discount shallower; decelerating deepens it.
@@ -72,6 +75,6 @@ public class SellThroughAlgorithm : IPricingAlgorithm
             ctx.PriceAtDiscount(target),
             confidence,
             reason,
-            $"≈{Math.Round(days)} days to sellout at {ctx.WeightedDailyVelocity:0.##}/day — {shape}{trendNote}.");
+            $"≈{Math.Round(days)} days to clear {ctx.KsStock} local units at {ctx.WeightedDailyVelocity:0.##}/day — {shape}{trendNote}.");
     }
 }

@@ -76,6 +76,30 @@ public class SellThroughTests
         var ctx = TestData.Ctx(ksStock: 0, supplierStock: 0, qty7: 7);
         Assert.Null(_algorithm.Evaluate(ctx));
     }
+
+    [Fact]
+    public void HugeSupplierStock_Ignored_NoFalseMarkdown()
+    {
+        // 10 local units selling 2/day = 5 days of OUR stock → shave, not markdown — even though the
+        // supplier holds 10,000 (which on total stock would read as 5,000 days → deep markdown).
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 85m, pptcv: 70m,
+            ksStock: 10, supplierStock: 10000, qty7: 14, qty14: 28, qty30: 60, qty90: 180);
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal("SELL_THROUGH_FAST", vote!.ReasonCode);  // fast on local stock, never SELL_THROUGH_SLOW
+        Assert.Equal(90m, vote.SuggestedPrice);               // 15% → 10% off anchor 100 (a trim, not a markdown)
+    }
+
+    [Fact]
+    public void SupplierOnly_Silent_NotOursToClear()
+    {
+        // No local stock, only supplier stock — even if it's selling, sell-through stays out of it
+        // (the supplier-only-no-markdown guardrail owns this case).
+        var ctx = TestData.Ctx(ksStock: 0, supplierStock: 500, qty7: 14, qty30: 60, qty90: 180);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
 }
 
 public class NewProductProtectionTests

@@ -69,7 +69,9 @@ reasonable time — and is demand speeding up or slowing down?"
 
 This is the consolidated velocity/inventory advisor (it merges the former velocity-forecast,
 stockout-risk and momentum algorithms, so the same sales-speed signal isn't counted three
-times in the blend). It projects days-to-sellout and reads the short-vs-long velocity trend:
+times in the blend). Days-of-stock is measured on **our own (KS) warehouse stock only** — supplier
+stock isn't ours to clear and is volatile (a supplier can add thousands of units overnight), so it
+never drives a markdown. It projects days-to-sellout of local stock and reads the velocity trend:
 
 - **About to sell out (~≤2 weeks) on a healthy margin** → **remove the discount** (no point
   burning margin on something that will sell out anyway). Never a markdown.
@@ -78,7 +80,8 @@ times in the blend). It projects days-to-sellout and reads the short-vs-long vel
 - **Trend modifier:** accelerating demand tempers the discount shallower; decelerating deepens it.
 
 **How sure it is:** more sales history = more confidence.
-**Silent when:** there's no stock, or nothing is selling at all (that's dead-stock territory).
+**Silent when:** we hold no local (KS) stock (supplier-only stock is the guardrail's job), or nothing
+is selling at all (that's dead-stock territory).
 
 ---
 

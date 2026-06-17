@@ -103,6 +103,15 @@ public class SkuContext
     public decimal? DaysToSellout =>
         WeightedDailyVelocity > 0 ? TotalStock / WeightedDailyVelocity : null;
 
+    /// <summary>
+    /// Projected days until our LOCALLY-HELD (KS) stock sells out at the weighted velocity. Null when
+    /// velocity is zero. Sell-through / markdown logic uses THIS, not total stock — supplier stock is
+    /// not ours to clear and is volatile (a supplier can add thousands of units overnight), so it must
+    /// not inflate "days of stock" and trigger markdowns.
+    /// </summary>
+    public decimal? DaysToSelloutLocal =>
+        WeightedDailyVelocity > 0 ? KsStock / WeightedDailyVelocity : null;
+
     /// <summary>Margin percent at the current selling price computed from PPTCV (VAT reconciled). Null without cost.</summary>
     public decimal? CurrentMarginPct => VatMath.MarginPct(CurrentPrice, Pptcv, VatRatePct);
 
