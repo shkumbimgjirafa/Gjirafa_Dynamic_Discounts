@@ -146,7 +146,7 @@ public class PriceCalculatorTests
         // Vote 60 → margin floor (cost 50, floor 20%, VAT 18%) forces 73.75 → .99 rounding
         // must go UP to 73.99 (73.-something down candidate 72.99 would breach the floor).
         var band = BandWith(20, RoundingConvention.EndsIn99, true, ("A", true, 100));
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, band: band);
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, qty90: 12, band: band);
 
         var decision = NewCalculator().Decide(ctx, new[] { new FakeAlgorithm("A", new AlgorithmVote(60m, 1m, "R", "")) });
 

@@ -148,7 +148,9 @@ opt-outs live in `SkuOverrides` (scoped per layer).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
    matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
    band-enabled algorithm → weighted average of votes (band weight × vote confidence) →
-   **guardrail clamp** (margin floor with VAT reconciliation + anchor/FinalPrice cap; no discount ceiling) →
+   **guardrail clamp** (margin floor with VAT reconciliation + anchor/FinalPrice cap; no discount ceiling;
+   locally-held dead stock may pierce the floor down to 50% of cost, and a below-floor price that starts
+   selling is held there) →
    **psychological rounding** that never violates the guardrails.
 4. Write `ProposedPrices` + every `AlgorithmVotes` row, wrapped in a `PricingRuns` record
    (status, SKU/error counts) — failures and partial runs stay visible.
@@ -175,6 +177,13 @@ supplier-only-no-markdown guardrail.)
 
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
 history: consecutive daily snapshots with zero trailing-7d sales.
+
+`DEAD_STOCK` is the only algorithm allowed below the margin floor: for locally-held stock with no
+sales in 90 days, the markdown deepens 5pp every two weeks and may run down to **50% of cost**
+(`PricingEngine:DeadStockFloorCostFraction`, a negative margin) to clear it. Enforced in
+`GuardrailService` (flag `DEAD_STOCK_FLOOR_RELAXED`), so it's gated on the dead-stock context, not on
+which algorithm voted. Once such a below-floor price starts selling again it's frozen at that level
+(`DEAD_STOCK_TUNNEL_HELD`) — never raised back.
 
 ## Full-catalog scale
 

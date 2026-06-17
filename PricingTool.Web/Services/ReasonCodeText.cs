@@ -37,6 +37,8 @@ public static class ReasonCodeText
         ["MARGIN_FLOOR_ABOVE_OLD_PRICE"] = "⚠ Even full price misses margin floor",
         ["ROUNDING_SKIPPED_OUT_OF_BOUNDS"] = "Rounding skipped (would breach guardrail)",
         ["SUPPLIER_ONLY_NO_MARKDOWN"] = "Supplier-only dead stock — markdown blocked",
+        ["DEAD_STOCK_FLOOR_RELAXED"] = "Dead stock — discount taken below the margin floor (clearing at a loss)",
+        ["DEAD_STOCK_TUNNEL_HELD"] = "Dead stock started selling — price held at the markdown level",
     };
 
     /// <summary>The guardrail/reason code emitted for products inside the platform MarkAsNew window.</summary>

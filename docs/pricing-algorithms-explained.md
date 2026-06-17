@@ -135,10 +135,15 @@ and a trustworthy fit get a usable coefficient.
 **The situation:** Zero sales in the last 90 days, but we still have stock **in our own
 warehouse** sitting there — true dead stock that's ours to clear.
 
-**What it does:** Start at **10% off** and add **5pp every two weeks** it stays unsold,
-deepening the discount as far down as the margin floor allows (there's no discount ceiling
-to stop it). It only ever marks *down* — it will never shrink a discount that's already in
-place.
+**What it does:** Start at **10% off** and add **5pp every two weeks** it stays unsold. This
+is the **one** advisor allowed to push a price **below the margin floor** — for stock we
+physically hold that simply won't move, clearing it at a loss beats holding it forever, so
+the markdown may run all the way down to **50% of cost** (a negative margin). It only ever
+marks *down* — it will never shrink a discount that's already in place.
+
+**If it finally sells:** the price is **held** at the level that moved it — the SKU stays in
+the markdown "tunnel" and is never raised back up just because a sale came in. (If it goes
+quiet again, the markdown resumes deepening.)
 
 This is the strongest "get it moving" advisor for stuck inventory.
 
@@ -191,8 +196,11 @@ products and be switched off for another.
 
 After the averaging, these non-negotiable limits are applied:
 
-1. **Margin floor** — the price can't drop below the level that still earns the band's
-   minimum margin on cost. This is the *only* limit on how deep a discount can go.
+1. **Margin floor** — for normally-selling products the price can't drop below the level that
+   still earns the band's minimum margin on cost. The **one exception** is locally-held dead
+   stock (no sales in 90 days): there the dead-stock markdown is allowed *through* the floor,
+   down to **50% of cost**, to clear inventory we're stuck with (see advisor #7). And once such
+   a below-floor price starts selling, it's held there — never raised back.
 2. **Anchor-price cap** — the price can't go above the anchor (FinalPrice). The tool proposes
    discounts off the true reference, not increases above it. (The display "shelf"/OldPrice no
    longer governs this.)
@@ -205,8 +213,9 @@ After the averaging, these non-negotiable limits are applied:
    held exactly as-is (no discount, no change), overriding every algorithm. New launches are never
    touched until their new-product window ends.
 
-> **Note:** There is **no discount ceiling**. Discounts may go as deep as the margin floor
-> allows — the floor is the sole brake on how low a price can land.
+> **Note:** There is **no discount ceiling**. For most products the margin floor is the sole
+> brake on how low a price can land; for locally-held dead stock that brake is lowered to 50%
+> of cost (a deliberate loss to clear stock we're stuck with).
 
 **Special case:** if even the full shelf price doesn't meet the margin floor (a mis-priced
 item), the tool holds the margin floor and **flags it for a human** — that situation needs a

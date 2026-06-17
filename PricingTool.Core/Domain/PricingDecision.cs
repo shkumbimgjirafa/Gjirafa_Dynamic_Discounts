@@ -24,6 +24,10 @@ public static class GuardrailFlags
     public const string SupplierOnlyNoMarkdown = "SUPPLIER_ONLY_NO_MARKDOWN";
     /// <summary>Inside the platform MarkAsNew window — price held as-is (no discount, no change).</summary>
     public const string NewProductProtected = "NEW_PRODUCT_PROTECTED";
+    /// <summary>Locally-held dead stock (no 90-day sales): the markdown was allowed below the margin floor — down to the dead-stock cost-fraction floor — to clear it at a loss.</summary>
+    public const string DeadStockFloorRelaxed = "DEAD_STOCK_FLOOR_RELAXED";
+    /// <summary>A below-floor dead-stock price started selling again — held at the current price (kept in the markdown "tunnel", never raised back).</summary>
+    public const string DeadStockTunnelHeld = "DEAD_STOCK_TUNNEL_HELD";
 }
 
 /// <summary>Reasons a SKU was excluded from pricing, recorded on a skipped proposal row.</summary>

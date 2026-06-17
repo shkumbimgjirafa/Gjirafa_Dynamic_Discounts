@@ -11,7 +11,7 @@ public class GuardrailTests
     public void Clamp_RaisesToMarginFloor()
     {
         // cost 50 net, floor 20% → min net 62.5 → min gross 73.75 at 18% VAT.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
 
         var result = _guardrails.Clamp(ctx, 60m);
@@ -59,7 +59,7 @@ public class GuardrailTests
     public void Clamp_MarginFloorAboveOldPrice_HoldsFloorAndFlags()
     {
         // cost 90 net, floor 20% → min gross 132.75 > OldPrice 100. Margin wins; humans alerted.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 95m, pptcv: 90m,
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 95m, pptcv: 90m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
 
         var result = _guardrails.Clamp(ctx, 95m);
@@ -74,7 +74,7 @@ public class GuardrailTests
     {
         // If VAT were ignored, floor price for cost=50 / floor=20% would be 62.50.
         // Correct VAT-aware floor is 73.75 — verify we get the VAT-aware one.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
 
         var result = _guardrails.Clamp(ctx, 63m);
@@ -87,7 +87,7 @@ public class GuardrailTests
     [Fact]
     public void Bounds_LowerIsMarginFloor_UpperIsOldPrice()
     {
-        var ctx = TestData.Ctx(oldPrice: 100m, pptcv: 50m,
+        var ctx = TestData.Ctx(oldPrice: 100m, pptcv: 50m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
         var bounds = _guardrails.GetBounds(ctx);
 
@@ -162,6 +162,89 @@ public class GuardrailTests
 
         Assert.Equal(70m, result.Price);
         Assert.Empty(result.Flags);
+    }
+
+    // ---- Local dead-stock "tunnel": the one case allowed below the margin floor ------------
+
+    [Fact]
+    public void Clamp_LocalDeadStock_DiscountPiercesMarginFloor()
+    {
+        // Locally held, zero 90d sales: the markdown is allowed below the margin floor (73.75) down
+        // toward the dead-stock cost-fraction floor (50% of cost = 29.50 gross). No floor clamp fires.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 0, band: TestData.Band(marginFloorPct: 20m));
+
+        var result = _guardrails.Clamp(ctx, 40m);
+
+        Assert.Equal(40m, result.Price);
+        Assert.Contains(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
+        Assert.DoesNotContain(GuardrailFlags.MarginFloorClamped, result.Flags);
+    }
+
+    [Fact]
+    public void Clamp_LocalDeadStock_StopsAtCostFractionFloor()
+    {
+        // A very deep dead-stock vote can't go below 50% of cost: 0.50 × 50 = 25 net → 29.50 gross.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 0, band: TestData.Band(marginFloorPct: 20m));
+
+        var result = _guardrails.Clamp(ctx, 5m);
+
+        Assert.Equal(29.50m, result.Price);
+        Assert.Contains(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
+    }
+
+    [Fact]
+    public void Clamp_LocalDeadStock_StartedSelling_HoldsTheBelowFloorPrice()
+    {
+        // It finally sold (qty90 > 0) at a below-floor tunnel price (40 < floor 73.75): hold it —
+        // don't raise it back, even though the blend voted higher.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 40m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 6, band: TestData.Band(marginFloorPct: 20m));
+
+        var result = _guardrails.Clamp(ctx, 90m);
+
+        Assert.Equal(40m, result.Price);
+        Assert.Contains(GuardrailFlags.DeadStockTunnelHeld, result.Flags);
+    }
+
+    [Fact]
+    public void Clamp_SellingProductAboveFloor_StillHardClampedToMarginFloor()
+    {
+        // A selling product (qty90 > 0) priced above the floor is NOT in the tunnel: the margin
+        // floor stays a hard limit — only dead stock pierces it.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 12, band: TestData.Band(marginFloorPct: 20m));
+
+        var result = _guardrails.Clamp(ctx, 60m);
+
+        Assert.Equal(73.75m, result.Price);
+        Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
+        Assert.DoesNotContain(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
+    }
+
+    [Fact]
+    public void Bounds_LocalDeadStock_LowerIsCostFractionFloor()
+    {
+        var ctx = TestData.Ctx(oldPrice: 100m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 0, band: TestData.Band(marginFloorPct: 20m));
+
+        var bounds = _guardrails.GetBounds(ctx);
+
+        Assert.Equal(29.50m, bounds.Lower);   // 50% of cost, grossed — below the 73.75 margin floor
+        Assert.Equal(100m, bounds.Upper);
+    }
+
+    [Fact]
+    public void Bounds_LocalDeadStock_StartedSelling_PinnedAtCurrentPrice()
+    {
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 40m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 6, band: TestData.Band(marginFloorPct: 20m));
+
+        var bounds = _guardrails.GetBounds(ctx);
+
+        Assert.Equal(40m, bounds.Lower);
+        Assert.Equal(40m, bounds.Upper);
     }
 
     // ---- Anchor (FinalPrice) drives the ceiling, not the display-only OldPrice -------------

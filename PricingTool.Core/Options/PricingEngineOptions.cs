@@ -20,6 +20,14 @@ public class PricingEngineOptions
     /// <summary>Proposals with |change| above this percent require explicit confirmation in the UI.</summary>
     public decimal ChangeConfirmationThresholdPct { get; set; } = 20m;
 
+    /// <summary>
+    /// Dead-stock "tunnel" floor as a fraction of unit cost (0.50 = 50% of cost — a negative margin).
+    /// Locally-held stock with no sales in 90 days is the ONE case allowed to pierce the margin floor:
+    /// its progressive markdown may run down to this fraction of cost to clear inventory we hold. Set to
+    /// 1.0 to disable the relaxation (the normal margin floor then applies to dead stock too).
+    /// </summary>
+    public decimal DeadStockFloorCostFraction { get; set; } = 0.50m;
+
     /// <summary>When true the source reader is replaced by the demo data generator (no source DB needed).</summary>
     public bool UseDemoData { get; set; }
 
