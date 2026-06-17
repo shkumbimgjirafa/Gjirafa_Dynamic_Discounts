@@ -17,8 +17,9 @@ For every product (SKU), once per run, the tool does this:
    "no opinion").
 3. **Blends the votes** into one number — a *weighted average*, where louder, more-confident
    advisors pull the result more.
-4. **Applies hard limits (guardrails)** — never below the margin floor, never above the shelf
-   price, and never marks down supplier-only stock that isn't selling.
+4. **Applies hard limits (guardrails)** — never above the anchor price (FinalPrice), never below
+   the margin floor (except locally-held dead stock, which may go down to 50% of cost), and never
+   marks down supplier-only stock that isn't selling.
 5. **Rounds to a nice-looking price** (e.g. ends in .99) — but only if rounding doesn't
    break the guardrails.
 
@@ -75,8 +76,9 @@ never drives a markdown. It projects days-to-sellout of local stock and reads th
 
 - **About to sell out (~≤2 weeks) on a healthy margin** → **remove the discount** (no point
   burning margin on something that will sell out anyway). Never a markdown.
-- **Fast (≤3 weeks)** → *shave* the discount. **On pace** → hold. **Slow (1.5–6 months)** →
-  deepen (+3 to +6pp). **Over 6 months of stock** → markdown pressure (+10pp).
+- **Fast (≤3 weeks)** → *shave* the discount (−5pp). **On pace (≤45 days)** → hold.
+  **Slow (1.5–3 months)** → deepen +3pp. **Very slow (3–6 months)** → deepen +6pp.
+  **Over 6 months of stock** → markdown pressure (+10pp).
 - **Trend modifier:** accelerating demand tempers the discount shallower; decelerating deepens it.
 
 **How sure it is:** more sales history = more confidence.
@@ -105,7 +107,7 @@ of the Sell-through advisor (#1).
 
 ---
 
-### 5. Price elasticity (fitted) — *default weight 50*
+### 5. Price elasticity (fitted) — *default weight 80*
 **The question:** "Does demand here actually respond to price?"
 
 A per-SKU elasticity is **fitted weekly** from years of transaction history (a log-log
@@ -203,7 +205,9 @@ After the averaging, these non-negotiable limits are applied:
    a below-floor price starts selling, it's held there — never raised back.
 2. **Anchor-price cap** — the price can't go above the anchor (FinalPrice). The tool proposes
    discounts off the true reference, not increases above it. (The display "shelf"/OldPrice no
-   longer governs this.)
+   longer governs this.) If FinalPrice is missing or zero, the anchor falls back to the shelf
+   price and the proposal is flagged (*"No FinalPrice — anchored to the shelf price"*), since the
+   cap may then rest on an inflated reference.
 3. **No markdown on supplier-only dead stock** — if every unit sits in a supplier warehouse
    (none in our own) **and** nothing has sold in 90 days, the price is never marked *below*
    today's price. We don't give margin away on inventory we don't hold that isn't selling.
@@ -244,7 +248,7 @@ price. Each band carries its own:
 
 - margin floor (the guardrail above),
 - rounding style,
-- and the on/off switch + weight for each of the 10 algorithms.
+- and the on/off switch + weight for each algorithm.
 
 So bands are the control panel: they let the team tune how aggressively each strategy applies
 to cheap vs. expensive products, without changing any algorithm itself.

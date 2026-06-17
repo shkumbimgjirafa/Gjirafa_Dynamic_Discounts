@@ -148,9 +148,9 @@ opt-outs live in `SkuOverrides` (scoped per layer).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
    matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
    band-enabled algorithm → weighted average of votes (band weight × vote confidence) →
-   **guardrail clamp** (margin floor with VAT reconciliation + anchor/FinalPrice cap; no discount ceiling;
-   locally-held dead stock may pierce the floor down to 50% of cost, and a below-floor price that starts
-   selling is held there) →
+   **guardrail clamp** (margin floor with VAT reconciliation + anchor/FinalPrice cap, falling back to the
+   shelf price + a flag when FinalPrice is missing; no discount ceiling; locally-held dead stock may pierce
+   the floor down to 50% of cost, and a below-floor price that starts selling is held there) →
    **psychological rounding** that never violates the guardrails.
 4. Write `ProposedPrices` + every `AlgorithmVotes` row, wrapped in a `PricingRuns` record
    (status, SKU/error counts) — failures and partial runs stay visible.
