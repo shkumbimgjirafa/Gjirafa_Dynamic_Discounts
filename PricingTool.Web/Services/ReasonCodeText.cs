@@ -39,10 +39,31 @@ public static class ReasonCodeText
         ["SUPPLIER_ONLY_NO_MARKDOWN"] = "Supplier-only dead stock — markdown blocked",
     };
 
+    /// <summary>The guardrail/reason code emitted for products inside the platform MarkAsNew window.</summary>
+    public const string NewProductCode = "NEW_PRODUCT_PROTECTED";
+
     public static string Describe(string code) =>
         Map.TryGetValue(code.Trim(), out var text) ? text : code;
 
-    public static IEnumerable<(string Code, string Text)> DescribeList(string csv) =>
+    /// <summary>
+    /// Splits a CSV reason/guardrail string into (code, friendly-text) pairs, optionally dropping
+    /// codes in <paramref name="exclude"/> (e.g. ones already surfaced as a dedicated badge).
+    /// </summary>
+    public static IEnumerable<(string Code, string Text)> DescribeList(string csv, params string[] exclude) =>
         csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+           .Where(c => exclude.Length == 0 || !exclude.Contains(c, StringComparer.Ordinal))
            .Select(c => (c, Describe(c)));
+
+    /// <summary>True when any of the supplied CSV reason/guardrail strings contains <paramref name="code"/>.</summary>
+    public static bool HasCode(string code, params string?[] csvs) =>
+        csvs.Any(csv => !string.IsNullOrEmpty(csv)
+            && csv!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                   .Contains(code, StringComparer.Ordinal));
+
+    /// <summary>
+    /// True when a proposal is a held new product (inside the platform MarkAsNew window). Pass its
+    /// ReasonCodes and/or GuardrailFlags — the flag is written to both.
+    /// </summary>
+    public static bool IsNewProduct(params string?[] reasonOrGuardrailCsvs) =>
+        HasCode(NewProductCode, reasonOrGuardrailCsvs);
 }

@@ -10,7 +10,18 @@
     var qty = JsonSerializer.Serialize(Model.History.Select(h => h.Qty7));
 }
 
-<h1 class="h3">SKU drill-down: <code>@Model.Sku</code></h1>
+@{
+    var latestProposal = Model.Proposals.FirstOrDefault()?.Proposal;
+    var isNewProduct = latestProposal is not null
+        && ReasonCodeText.IsNewProduct(latestProposal.ReasonCodes, latestProposal.GuardrailFlags);
+}
+<h1 class="h3">
+    SKU drill-down: <code>@Model.Sku</code>
+    @if (isNewProduct)
+    {
+        <span class="badge bg-info text-dark align-middle ms-2" title="Inside the platform MarkAsNew window — the engine holds the current price, no discount.">NEW PRODUCT — price held</span>
+    }
+</h1>
 
 @if (Model.Latest is not null)
 {

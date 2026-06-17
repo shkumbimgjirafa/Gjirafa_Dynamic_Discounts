@@ -143,7 +143,13 @@
                         }
                     </td>
                 }
-                <td><a asp-controller="Sku" asp-action="Details" asp-route-id="@p.Sku">@p.Sku</a></td>
+                <td>
+                    <a asp-controller="Sku" asp-action="Details" asp-route-id="@p.Sku">@p.Sku</a>
+                    @if (ReasonCodeText.IsNewProduct(p.ReasonCodes, p.GuardrailFlags))
+                    {
+                        <span class="badge bg-info text-dark ms-1" title="New product (MarkAsNew window) — price held, no discount">NEW</span>
+                    }
+                </td>
                 <td><small>@bandName</small></td>
                 <td class="text-end">@(p.Pptcv.HasValue ? p.Pptcv.Value.ToString("0.00") : "–")</td>
                 <td class="text-end text-muted">@p.OldPrice.ToString("0.00")</td>
@@ -155,7 +161,7 @@
                     @if (large) { <span title="Exceeds ±@Model.ConfirmationThresholdPct% — requires confirmation">⚠</span> }
                 </td>
                 <td>
-                    @foreach (var (code, text) in ReasonCodeText.DescribeList(p.ReasonCodes))
+                    @foreach (var (code, text) in ReasonCodeText.DescribeList(p.ReasonCodes, ReasonCodeText.NewProductCode))
                     {
                         <span class="badge bg-light text-dark border" title="@code">@text</span>
                     }
