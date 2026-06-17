@@ -123,7 +123,7 @@
                 @if (isManager) { <th><input type="checkbox" id="checkAll" /></th> }
                 <th>SKU</th><th>Band</th>
                 <th class="text-end">Cost @cur</th>
-                <th class="text-end">Old @cur</th><th class="text-end">Current @cur</th><th class="text-end">Proposed @cur</th>
+                <th class="text-end">Old @cur</th><th class="text-end">Anchor @cur</th><th class="text-end">Current @cur</th><th class="text-end">Proposed @cur</th>
                 <th class="text-end">Δ%</th>
                 <th>Reasons</th><th>Guardrails</th><th>Status</th>
             </tr>
@@ -146,7 +146,8 @@
                 <td><a asp-controller="Sku" asp-action="Details" asp-route-id="@p.Sku">@p.Sku</a></td>
                 <td><small>@bandName</small></td>
                 <td class="text-end">@(p.Pptcv.HasValue ? p.Pptcv.Value.ToString("0.00") : "–")</td>
-                <td class="text-end">@p.OldPrice.ToString("0.00")</td>
+                <td class="text-end text-muted">@p.OldPrice.ToString("0.00")</td>
+                <td class="text-end">@p.AnchorPrice.ToString("0.00")</td>
                 <td class="text-end">@p.CurrentPrice.ToString("0.00")</td>
                 <td class="text-end fw-bold">@p.ProposedPriceValue.ToString("0.00")</td>
                 <td class="text-end @(p.ChangePct > 0 ? "text-success" : p.ChangePct < 0 ? "text-danger" : "text-muted")">

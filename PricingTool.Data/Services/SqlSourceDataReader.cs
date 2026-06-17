@@ -78,6 +78,8 @@ public class SqlSourceDataReader : ISourceDataReader
             {
                 Sku = reader.GetString(skuOrdinal).Trim(),
                 OldPrice = Dec(reader, "OldPrice"),
+                AnchorPrice = Dec(reader, "AnchorPrice"),
+                AnchorIsFallback = Int0(reader, "AnchorFromShelf") == 1,
                 CurrentPrice = Dec(reader, "CurrentPrice"),
                 CurrentDiscountPct = Dec(reader, "CurrentDiscountPct"),
                 Pptcv = Dec(reader, "PPTCV"),
@@ -86,20 +88,11 @@ public class SqlSourceDataReader : ISourceDataReader
                 SupplierWarehouseStock = Int0(reader, "Supplier_WarehouseStock"),
                 Qty7 = Int0(reader, "7d_qty"),
                 Net7 = Dec0(reader, "7d_net"),
-                Disc7 = Dec(reader, "7d_avg_discount_pct"),
                 Qty14 = Int0(reader, "14d_qty"),
-                Net14 = Dec0(reader, "14d_net"),
-                Disc14 = Dec(reader, "14d_avg_discount_pct"),
                 Qty30 = Int0(reader, "30d_qty"),
-                Net30 = Dec0(reader, "30d_net"),
-                Disc30 = Dec(reader, "30d_avg_discount_pct"),
                 Qty60 = Int0(reader, "60d_qty"),
-                Net60 = Dec0(reader, "60d_net"),
-                Disc60 = Dec(reader, "60d_avg_discount_pct"),
                 Qty90 = Int0(reader, "90d_qty"),
-                Net90 = Dec0(reader, "90d_net"),
-                Disc90 = Dec(reader, "90d_avg_discount_pct"),
-                LaunchDateUtc = null, // not present in the v1 dataset (open decision #2)
+                LaunchDateUtc = null, // no reliable launch-date signal yet
             });
         }
 

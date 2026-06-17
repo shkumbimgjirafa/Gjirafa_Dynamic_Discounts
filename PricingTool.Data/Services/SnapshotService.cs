@@ -39,6 +39,7 @@ public class SnapshotService
             PulledAtUtc = pulledAtUtc,
             Sku = r.Sku,
             OldPrice = r.OldPrice,
+            AnchorPrice = r.AnchorPrice,
             CurrentPrice = r.CurrentPrice,
             CurrentDiscountPct = r.CurrentDiscountPct,
             Pptcv = r.Pptcv,

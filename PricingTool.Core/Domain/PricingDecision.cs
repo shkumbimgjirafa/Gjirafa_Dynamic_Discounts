@@ -14,9 +14,11 @@ public record WeightedVote(
 public static class GuardrailFlags
 {
     public const string MarginFloorClamped = "MARGIN_FLOOR_CLAMPED";
-    public const string CappedAtOldPrice = "CAPPED_AT_OLD_PRICE";
-    /// <summary>Even OldPrice violates the margin floor — SKU is fundamentally mispriced; needs human attention.</summary>
-    public const string MarginFloorAboveOldPrice = "MARGIN_FLOOR_ABOVE_OLD_PRICE";
+    public const string CappedAtAnchor = "CAPPED_AT_ANCHOR";
+    /// <summary>Even the anchor price violates the margin floor — SKU is fundamentally mispriced; needs human attention.</summary>
+    public const string MarginFloorAboveAnchor = "MARGIN_FLOOR_ABOVE_ANCHOR";
+    /// <summary>FinalPrice was missing/zero so the anchor fell back to the shelf OldPrice — the cap may be based on an inflated reference.</summary>
+    public const string AnchorFallbackToShelf = "ANCHOR_FALLBACK_TO_SHELF";
     public const string RoundingSkippedOutOfBounds = "ROUNDING_SKIPPED_OUT_OF_BOUNDS";
     /// <summary>Stock sits only in supplier warehouses and isn't selling — a proposed markdown was blocked; we don't discount stock we don't hold locally.</summary>
     public const string SupplierOnlyNoMarkdown = "SUPPLIER_ONLY_NO_MARKDOWN";
@@ -34,6 +36,11 @@ public static class SkipReasons
 public class PricingDecision
 {
     public required string Sku { get; init; }
+
+    /// <summary>The anchor price (ProductPricing.FinalPrice) that drove the discount math and the cap.</summary>
+    public decimal AnchorPrice { get; init; }
+
+    /// <summary>Display-only shelf price (TierPrice.OldPrice).</summary>
     public decimal OldPrice { get; init; }
     public decimal CurrentPrice { get; init; }
 

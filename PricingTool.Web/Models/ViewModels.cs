@@ -125,6 +125,7 @@ public class SkuHistoryPoint
     public DateTime Date { get; set; }
     public decimal? CurrentPrice { get; set; }
     public decimal? OldPrice { get; set; }
+    public decimal? AnchorPrice { get; set; }
     public int Qty7 { get; set; }
     public int KsStock { get; set; }
     public int SupplierStock { get; set; }
@@ -148,4 +149,33 @@ public class ErrorViewModel
 {
     public string? RequestId { get; set; }
     public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+}
+
+// ---------------------------------------------------------------- Movers
+
+/// <summary>A changed proposal joined to its run-day snapshot (sales + stock) for the Movers lists.</summary>
+public class MoverRow
+{
+    public string Sku { get; set; } = "";
+    public int? PriceBandId { get; set; }
+    public string Band { get; set; } = "–";
+    public decimal OldPrice { get; set; }
+    public decimal AnchorPrice { get; set; }
+    public decimal CurrentPrice { get; set; }
+    public decimal ProposedPrice { get; set; }
+    public decimal ChangePct { get; set; }
+    public int Qty7 { get; set; }
+    public int Qty30 { get; set; }
+    public int Qty90 { get; set; }
+    public int KsStock { get; set; }
+    public int SupplierStock { get; set; }
+    public string ReasonCodes { get; set; } = "";
+    public string GuardrailFlags { get; set; } = "";
+}
+
+public class MoversViewModel
+{
+    public PricingRun? Run { get; set; }
+    public List<MoverRow> TopSellers { get; set; } = new();
+    public List<MoverRow> DeadInStock { get; set; } = new();
 }

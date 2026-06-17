@@ -6,6 +6,7 @@ using PricingTool.Data.Services;
 using PricingTool.Engine;
 
 var runOnce = args.Contains("--run-now");
+var fitElasticity = args.Contains("--fit-elasticity");
 
 // Optional "--layer <code>" filter for --run-now (e.g. --layer MK or --layer GjirafaMall/MK).
 string? layerArg = null;
@@ -14,7 +15,11 @@ if (layerIdx >= 0 && layerIdx + 1 < args.Length) layerArg = args[layerIdx + 1];
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddPricingTool(builder.Configuration);
-if (!runOnce) builder.Services.AddHostedService<ScheduledRunWorker>();
+if (!runOnce && !fitElasticity)
+{
+    builder.Services.AddHostedService<ScheduledRunWorker>();
+    builder.Services.AddHostedService<ElasticityFitWorker>();
+}
 
 var host = builder.Build();
 
@@ -71,6 +76,33 @@ if (runOnce)
         Console.WriteLine(
             $"[{layer.DisplayName}] Run #{run.Id}: {run.Status} — {run.SkuCount} SKUs, {run.ProposalCount} proposals, " +
             $"{run.SkippedCount} skipped, {run.ErrorCount} errors.");
+    }
+    return;
+}
+
+// `--fit-elasticity`: recompute per-(layer, SKU) elasticities for the targeted layers, then exit
+// (ops/cron escape hatch). With no "--layer" filter it fits ALL active layers sequentially.
+if (fitElasticity)
+{
+    using var scope = host.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<PricingToolDbContext>();
+    var fit = scope.ServiceProvider.GetRequiredService<ElasticityFitService>();
+
+    var targets = await db.Layers.AsNoTracking()
+        .Where(l => l.IsActive).OrderBy(l => l.SortOrder).ToListAsync();
+    if (!string.IsNullOrWhiteSpace(layerArg))
+    {
+        var code = layerArg.Trim();
+        targets = targets.Where(l =>
+            l.CountryCode.Equals(code, StringComparison.OrdinalIgnoreCase) ||
+            $"{l.Brand}/{l.CountryCode}".Equals(code, StringComparison.OrdinalIgnoreCase) ||
+            l.DisplayName.Equals(code, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    foreach (var layer in targets)
+    {
+        var fitted = await fit.FitLayerAsync(layer.Id);
+        Console.WriteLine($"[{layer.DisplayName}] Elasticity fit: {fitted} SKUs fitted.");
     }
     return;
 }

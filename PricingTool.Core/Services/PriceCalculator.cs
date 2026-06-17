@@ -36,6 +36,7 @@ public class PriceCalculator
             return new PricingDecision
             {
                 Sku = ctx.Sku,
+                AnchorPrice = ctx.AnchorPrice,
                 OldPrice = ctx.OldPrice,
                 CurrentPrice = ctx.CurrentPrice,
                 RawWeightedPrice = null,
@@ -66,6 +67,7 @@ public class PriceCalculator
         return new PricingDecision
         {
             Sku = ctx.Sku,
+            AnchorPrice = ctx.AnchorPrice,
             OldPrice = ctx.OldPrice,
             CurrentPrice = ctx.CurrentPrice,
             RawWeightedPrice = scored.RawPrice,

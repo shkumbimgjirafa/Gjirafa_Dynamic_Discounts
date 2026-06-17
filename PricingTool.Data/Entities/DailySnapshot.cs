@@ -18,6 +18,8 @@ public class DailySnapshot
 
     public string Sku { get; set; } = "";
     public decimal? OldPrice { get; set; }
+    /// <summary>Pricing anchor = ProductPricing.FinalPrice (shelf fallback applied upstream). Null on legacy rows.</summary>
+    public decimal? AnchorPrice { get; set; }
     public decimal? CurrentPrice { get; set; }
     public decimal? CurrentDiscountPct { get; set; }
     public decimal? Pptcv { get; set; }

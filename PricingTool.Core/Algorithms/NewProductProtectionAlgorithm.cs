@@ -21,7 +21,7 @@ public class NewProductProtectionAlgorithm : IPricingAlgorithm
         if (ageDays < 0 || ageDays > ctx.Options.NewProductProtectionDays) return null;
 
         return new AlgorithmVote(
-            ctx.OldPrice,
+            Math.Max(ctx.AnchorPrice, ctx.CurrentPrice),
             0.9m,
             "NEW_PRODUCT_PROTECTED",
             $"Launched {Math.Round(ageDays)} days ago (≤{ctx.Options.NewProductProtectionDays}d window) — protect full price.");

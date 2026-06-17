@@ -7,7 +7,12 @@ namespace PricingTool.Core.Domain;
 public class SnapshotRow
 {
     public required string Sku { get; init; }
+    /// <summary>Display-only shelf price (TierPrice.OldPrice).</summary>
     public decimal? OldPrice { get; init; }
+    /// <summary>Pricing anchor = ProductPricing.FinalPrice (shelf fallback applied in SQL).</summary>
+    public decimal? AnchorPrice { get; init; }
+    /// <summary>True when FinalPrice was missing/zero and the anchor fell back to the shelf OldPrice.</summary>
+    public bool AnchorIsFallback { get; init; }
     public decimal? CurrentPrice { get; init; }
     public decimal? CurrentDiscountPct { get; init; }
     public decimal? Pptcv { get; init; }

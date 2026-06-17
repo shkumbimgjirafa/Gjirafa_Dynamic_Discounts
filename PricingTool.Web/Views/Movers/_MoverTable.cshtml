@@ -1,0 +1,51 @@
+@model List<PricingTool.Web.Models.MoverRow>
+@{
+    var cur = ViewData.CurrencyCode();
+}
+
+@if (!Model.Any())
+{
+    <p class="text-muted">No matching products in this run.</p>
+}
+else
+{
+    <table class="table table-sm table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>SKU</th><th>Band</th>
+                <th class="text-end">7d</th><th class="text-end">30d</th><th class="text-end">90d</th>
+                <th class="text-end">KS</th><th class="text-end">Sup.</th>
+                <th class="text-end">Old @cur</th><th class="text-end">Anchor @cur</th>
+                <th class="text-end">Current @cur</th><th class="text-end">Proposed @cur</th>
+                <th class="text-end">Δ%</th><th>Reasons</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var r in Model)
+        {
+            <tr>
+                <td><a asp-controller="Sku" asp-action="Details" asp-route-id="@r.Sku">@r.Sku</a></td>
+                <td><small>@r.Band</small></td>
+                <td class="text-end">@r.Qty7</td>
+                <td class="text-end">@r.Qty30</td>
+                <td class="text-end fw-bold">@r.Qty90</td>
+                <td class="text-end">@r.KsStock</td>
+                <td class="text-end text-muted">@r.SupplierStock</td>
+                <td class="text-end text-muted">@r.OldPrice.ToString("0.00")</td>
+                <td class="text-end">@r.AnchorPrice.ToString("0.00")</td>
+                <td class="text-end">@r.CurrentPrice.ToString("0.00")</td>
+                <td class="text-end fw-bold">@r.ProposedPrice.ToString("0.00")</td>
+                <td class="text-end @(r.ChangePct > 0 ? "text-success" : r.ChangePct < 0 ? "text-danger" : "text-muted")">
+                    @r.ChangePct.ToString("+0.##;-0.##;0")%
+                </td>
+                <td>
+                    @foreach (var (code, text) in ReasonCodeText.DescribeList(r.ReasonCodes))
+                    {
+                        <span class="badge bg-light text-dark border" title="@code">@text</span>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}

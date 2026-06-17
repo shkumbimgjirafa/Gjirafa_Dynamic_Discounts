@@ -133,6 +133,10 @@ public class PricingRunOrchestrator
 
             var bands = await _bandProvider.GetBandsAsync(layerId, ct);
             var streaks = await _snapshots.GetZeroSaleStreaksAsync(layerId, pulledAt.Date, ct: ct);
+            // Usable elasticity coefficients only — Algorithm 5 sees a non-null value only when it's trustworthy.
+            var elasticities = await _db.SkuElasticities.AsNoTracking()
+                .Where(e => e.LayerId == layerId && e.IsUsable)
+                .ToDictionaryAsync(e => e.Sku, e => e.Coefficient, StringComparer.OrdinalIgnoreCase, ct);
             var roundingOverrides = await _db.SkuOverrides.AsNoTracking()
                 .Where(o => o.LayerId == layerId && o.RoundingDisabled)
                 .Select(o => o.Sku)
@@ -150,7 +154,7 @@ public class PricingRunOrchestrator
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var proposal = PriceOneSku(row, bands, streaks, roundingDisabledSkus, pulledAt);
+                    var proposal = PriceOneSku(row, bands, streaks, elasticities, roundingDisabledSkus, pulledAt, layer.VatRatePct);
                     proposal.Id = nextProposalId++;
                     proposal.PricingRunId = run.Id;
                     proposal.LayerId = layerId;
@@ -223,15 +227,25 @@ public class PricingRunOrchestrator
         SnapshotRow row,
         IReadOnlyList<PriceBandConfig> bands,
         IReadOnlyDictionary<string, int> streaks,
+        IReadOnlyDictionary<string, decimal> elasticities,
         HashSet<string> roundingDisabledSkus,
-        DateTime pulledAt)
+        DateTime pulledAt,
+        decimal vatRatePct)
     {
         // Policy order: unusable price → missing cost → no band. Skipped rows are flagged, never priced.
-        if (row.OldPrice is not decimal oldPrice || oldPrice <= 0 ||
-            row.CurrentPrice is not decimal currentPrice || currentPrice <= 0)
-        {
+        if (row.CurrentPrice is not decimal currentPrice || currentPrice <= 0)
             return Skip(row, SkipReasons.MissingPrice);
-        }
+
+        // Anchor = ProductPricing.FinalPrice (the SQL already falls back to the shelf OldPrice when
+        // absent); guard again defensively so demo/edge rows without an anchor are skipped, not zero-anchored.
+        var anchorPrice = row.AnchorPrice is decimal a && a > 0
+            ? a
+            : row.OldPrice ?? 0m;
+        if (anchorPrice <= 0)
+            return Skip(row, SkipReasons.MissingPrice);
+
+        // Display-only shelf price; fall back to the anchor when the platform has no OldPrice.
+        var oldPrice = row.OldPrice is decimal o && o > 0 ? o : anchorPrice;
 
         if (row.Pptcv is not decimal pptcv)
             return Skip(row, SkipReasons.MissingCost); // v1 policy: NULL cost is never treated as zero
@@ -244,10 +258,12 @@ public class PricingRunOrchestrator
         var ctx = new SkuContext
         {
             Sku = row.Sku,
+            AnchorPrice = anchorPrice,
             OldPrice = oldPrice,
             CurrentPrice = currentPrice,
             Pptcv = row.Pptcv,
             GrossMarginPct = row.GrossMargin,
+            Elasticity = elasticities.TryGetValue(row.Sku, out var elasticity) ? elasticity : null,
             KsStock = row.LocalWarehouseStock,
             SupplierStock = row.SupplierWarehouseStock,
             Qty7 = row.Qty7, Net7 = row.Net7, Disc7 = row.Disc7,
@@ -260,15 +276,21 @@ public class PricingRunOrchestrator
             ZeroSaleStreakDays = streaks.TryGetValue(row.Sku, out var streak) ? streak : 0,
             Band = band,
             Options = _options,
+            VatRatePct = vatRatePct,
             RoundingDisabledForSku = roundingDisabledSkus.Contains(row.Sku),
         };
 
         var decision = _calculator.Decide(ctx, _algorithms);
 
+        var guardrailFlags = decision.GuardrailFlagsApplied.ToList();
+        if (row.AnchorIsFallback)
+            guardrailFlags.Add(GuardrailFlags.AnchorFallbackToShelf);
+
         var proposal = new ProposedPrice
         {
             Sku = decision.Sku,
             PriceBandId = band.BandId,
+            AnchorPrice = decision.AnchorPrice,
             OldPrice = decision.OldPrice,
             CurrentPrice = decision.CurrentPrice,
             Pptcv = row.Pptcv,
@@ -277,7 +299,7 @@ public class PricingRunOrchestrator
             ChangePct = Math.Round(decision.ChangePct, 4),
             HasChange = decision.Changed,
             ReasonCodes = string.Join(",", decision.ReasonCodes),
-            GuardrailFlags = string.Join(",", decision.GuardrailFlagsApplied),
+            GuardrailFlags = string.Join(",", guardrailFlags),
             Status = ProposalStatus.Pending,
         };
 
@@ -317,6 +339,7 @@ public class PricingRunOrchestrator
     {
         Sku = row.Sku,
         OldPrice = row.OldPrice ?? 0,
+        AnchorPrice = row.AnchorPrice ?? row.OldPrice ?? 0,
         CurrentPrice = row.CurrentPrice ?? 0,
         Pptcv = row.Pptcv,
         ProposedPriceValue = row.CurrentPrice ?? 0,

@@ -13,8 +13,9 @@ namespace PricingTool.Data.Services;
 /// SET-BASED REWRITE: the latest tier price and the best active discount are now resolved in
 /// bulk via ROW_NUMBER() into #tier / #disc, instead of per-product correlated OUTER APPLYs.
 /// The correlated version did not complete on the full catalog (~680k SKUs); this version
-/// returns the whole set in ~20s. Output schema is unchanged. Keep in sync with
-/// scripts/usp_GetDailyPricingDataset.sql.
+/// returns the whole set in ~20s. Schema: adds AnchorPrice (= ProductPricing.FinalPrice, with a
+/// shelf fallback) + AnchorFromShelf; drops the now-unused per-window avg-discount-% and the
+/// Net14/30/60/90 windows. Keep in sync with scripts/usp_GetDailyPricingDataset.sql.
 /// </summary>
 public static class SourceQueries
 {
@@ -68,19 +69,7 @@ SELECT
     SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.Quantity     ELSE 0 END) AS [30d_qty],
     SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.PriceExclTax ELSE 0 END) AS [30d_net],
     SUM(CASE WHEN o.CreatedOnUtc >= @d60 THEN oi.Quantity     ELSE 0 END) AS [60d_qty],
-    SUM(CASE WHEN o.CreatedOnUtc >= @d60 THEN oi.PriceExclTax ELSE 0 END) AS [60d_net],
-    SUM(oi.Quantity)     AS [90d_qty],
-    SUM(oi.PriceExclTax) AS [90d_net],
-    SUM(CASE WHEN o.CreatedOnUtc >= @d7 THEN oi.DiscountAmountExclTax ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN o.CreatedOnUtc >= @d7 THEN oi.PriceExclTax + oi.DiscountAmountExclTax ELSE 0 END), 0) AS [7d_avg_discount_pct],
-    SUM(CASE WHEN o.CreatedOnUtc >= @d14 THEN oi.DiscountAmountExclTax ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN o.CreatedOnUtc >= @d14 THEN oi.PriceExclTax + oi.DiscountAmountExclTax ELSE 0 END), 0) AS [14d_avg_discount_pct],
-    SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.DiscountAmountExclTax ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.PriceExclTax + oi.DiscountAmountExclTax ELSE 0 END), 0) AS [30d_avg_discount_pct],
-    SUM(CASE WHEN o.CreatedOnUtc >= @d60 THEN oi.DiscountAmountExclTax ELSE 0 END)
-      / NULLIF(SUM(CASE WHEN o.CreatedOnUtc >= @d60 THEN oi.PriceExclTax + oi.DiscountAmountExclTax ELSE 0 END), 0) AS [60d_avg_discount_pct],
-    SUM(oi.DiscountAmountExclTax)
-      / NULLIF(SUM(oi.PriceExclTax + oi.DiscountAmountExclTax), 0) AS [90d_avg_discount_pct]
+    SUM(oi.Quantity)     AS [90d_qty]
 INTO #sales
 FROM {opDb}.dbo.OrderItem oi
 INNER JOIN {opDb}.dbo.[Order] o ON o.Id = oi.OrderId
@@ -91,7 +80,7 @@ WHERE o.OrderStatusId IN (20, 30)
 GROUP BY oi.ProductId;
 CREATE CLUSTERED INDEX cx ON #sales (ProductId);
 
-SELECT pp.ProductCode AS Sku, pp.PPTCV, pp.GrossMargin
+SELECT pp.ProductCode AS Sku, pp.PPTCV, pp.GrossMargin, pp.FinalPrice
 INTO #pricing
 FROM GjirafaTranslations.dbo.ProductPricing pp
 INNER JOIN #stock st ON st.Sku = pp.ProductCode
@@ -138,17 +127,19 @@ CREATE CLUSTERED INDEX cx ON #disc (ProductId);
 SELECT
     st.Sku,
     px.OldPrice,
+    ISNULL(NULLIF(pr.FinalPrice, 0), px.OldPrice) AS AnchorPrice,
+    CASE WHEN NULLIF(pr.FinalPrice, 0) IS NULL THEN 1 ELSE 0 END AS AnchorFromShelf,
     px.CurrentPrice,
     (px.OldPrice - px.CurrentPrice) / NULLIF(px.OldPrice, 0) AS CurrentDiscountPct,
     pr.PPTCV,
     pr.GrossMargin,
     st.LocalWarehouseStock,
     st.Supplier_WarehouseStock,
-    ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],  s.[7d_avg_discount_pct],
-    ISNULL(s.[14d_qty], 0) AS [14d_qty], ISNULL(s.[14d_net], 0) AS [14d_net], s.[14d_avg_discount_pct],
-    ISNULL(s.[30d_qty], 0) AS [30d_qty], ISNULL(s.[30d_net], 0) AS [30d_net], s.[30d_avg_discount_pct],
-    ISNULL(s.[60d_qty], 0) AS [60d_qty], ISNULL(s.[60d_net], 0) AS [60d_net], s.[60d_avg_discount_pct],
-    ISNULL(s.[90d_qty], 0) AS [90d_qty], ISNULL(s.[90d_net], 0) AS [90d_net], s.[90d_avg_discount_pct]
+    ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],
+    ISNULL(s.[14d_qty], 0) AS [14d_qty],
+    ISNULL(s.[30d_qty], 0) AS [30d_qty],
+    ISNULL(s.[60d_qty], 0) AS [60d_qty],
+    ISNULL(s.[90d_qty], 0) AS [90d_qty]
 FROM #stock st
 LEFT JOIN #tier t  ON t.ProductId  = st.ProductId
 LEFT JOIN #disc dx ON dx.ProductId = st.ProductId

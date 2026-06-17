@@ -73,27 +73,31 @@ public class HomeController : Controller
 
         if (lastRun is not null)
         {
-            var changed = await _db.ProposedPrices
-                .Where(p => p.PricingRunId == lastRun.Id && p.HasChange && p.Status != ProposalStatus.Skipped)
-                .Select(p => new { p.PriceBandId, p.ChangePct, p.ReasonCodes, p.GuardrailFlags })
-                .ToListAsync();
-
-            var bandNames = await _db.PriceBands.Where(b => b.LayerId == layerId).ToDictionaryAsync(b => b.Id, b => b.Name);
-
-            model.AlgorithmAttribution = changed
-                .SelectMany(p => p.ReasonCodes.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(code => (code, p.ChangePct)))
-                .GroupBy(x => x.code)
-                .Select(g => new AlgorithmAttribution(g.Key, g.Count(), Math.Round(g.Average(x => Math.Abs(x.ChangePct)), 2)))
-                .OrderByDescending(a => a.ChangedProposals)
+            // Attribution is aggregated in SQL — a full-catalog run has 100k+ changed rows, so we must
+            // never materialize them into memory (doing so timed out the dashboard). ReasonCodes is
+            // comma-joined, so it's split server-side via STRING_SPLIT.
+            var algoRows = await _db.Database.SqlQuery<AlgoAttrRow>($@"
+SELECT s.value AS Code, COUNT(*) AS ChangedProposals, CAST(AVG(ABS(p.ChangePct)) AS decimal(9,2)) AS AvgAbsChangePct
+FROM [PricingTool].[ProposedPrices] p
+CROSS APPLY STRING_SPLIT(p.ReasonCodes, ',') s
+WHERE p.PricingRunId = {lastRun.Id} AND p.HasChange = 1 AND p.Status <> {(int)ProposalStatus.Skipped} AND s.value <> ''
+GROUP BY s.value").ToListAsync();
+            model.AlgorithmAttribution = algoRows
+                .OrderByDescending(r => r.ChangedProposals)
+                .Select(r => new AlgorithmAttribution(r.Code, r.ChangedProposals, Math.Round(r.AvgAbsChangePct, 2)))
                 .ToList();
 
-            model.BandAttribution = changed
+            var bandNames = await _db.PriceBands.Where(b => b.LayerId == layerId).ToDictionaryAsync(b => b.Id, b => b.Name);
+            var bandRows = await _db.ProposedPrices
+                .Where(p => p.PricingRunId == lastRun.Id && p.HasChange && p.Status != ProposalStatus.Skipped)
                 .GroupBy(p => p.PriceBandId)
+                .Select(g => new { BandId = g.Key, Count = g.Count(), AvgChange = g.Average(x => x.ChangePct) })
+                .ToListAsync();
+            model.BandAttribution = bandRows
                 .Select(g => new BandAttribution(
-                    g.Key.HasValue && bandNames.TryGetValue(g.Key.Value, out var name) ? name : "(no band)",
-                    g.Count(),
-                    Math.Round(g.Average(x => x.ChangePct), 2)))
+                    g.BandId.HasValue && bandNames.TryGetValue(g.BandId.Value, out var name) ? name : "(no band)",
+                    g.Count,
+                    Math.Round(g.AvgChange, 2)))
                 .OrderByDescending(b => b.ChangedProposals)
                 .ToList();
 
@@ -102,7 +106,8 @@ public class HomeController : Controller
             model.MissingCostSampleSkus = await _db.ProposedPrices
                 .Where(p => p.PricingRunId == lastRun.Id && p.SkipReason == "MISSING_COST")
                 .OrderBy(p => p.Sku).Take(10).Select(p => p.Sku).ToListAsync();
-            model.GuardrailClampedSkus = changed.Count(p => p.GuardrailFlags.Length > 0);
+            model.GuardrailClampedSkus = await _db.ProposedPrices
+                .CountAsync(p => p.PricingRunId == lastRun.Id && p.HasChange && p.Status != ProposalStatus.Skipped && p.GuardrailFlags != "");
         }
 
         model.FailedRunsLast7Days = await _db.PricingRuns
@@ -162,6 +167,14 @@ public class HomeController : Controller
             .ToList();
 
         return View(model);
+    }
+
+    // Row shape for the SQL-side algorithm-attribution aggregation (EF "unmapped query type").
+    private sealed class AlgoAttrRow
+    {
+        public string Code { get; set; } = "";
+        public int ChangedProposals { get; set; }
+        public decimal AvgAbsChangePct { get; set; }
     }
 
     private static KpiSummary Summarize(IReadOnlyList<DailyKpi> days) => new(

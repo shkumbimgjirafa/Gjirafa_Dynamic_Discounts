@@ -8,8 +8,8 @@ public record ClampResult(decimal Price, IReadOnlyList<string> Flags);
 
 /// <summary>
 /// Hard filters applied after scoring and before rounding: the margin floor defines the lower
-/// bound; OldPrice caps the top (the tool proposes discounts, not price raises above the shelf
-/// price). There is no discount ceiling — discounts may go as deep as the margin floor allows.
+/// bound; the anchor price (ProductPricing.FinalPrice) caps the top (the tool proposes discounts,
+/// not raises above the anchor). There is no discount ceiling — discounts go as deep as the floor allows.
 ///
 /// One stock-location rule lives here too: supplier-only dead stock is never marked down (see
 /// <see cref="IsSupplierOnlyDeadStock"/>). Enforcing it at the guardrail covers every algorithm
@@ -20,8 +20,8 @@ public class GuardrailService
     /// <summary>
     /// Lower bound = the margin-floor price (0 when cost is unknown), raised to the current price
     /// for supplier-only dead stock so no markdown can land (rounding included).
-    /// Upper bound = OldPrice, unless the lower bound itself exceeds OldPrice (e.g. a mispriced
-    /// SKU whose margin floor is above shelf) in which case the lower bound wins.
+    /// Upper bound = AnchorPrice, unless the lower bound itself exceeds it (e.g. a mispriced
+    /// SKU whose margin floor is above the anchor) in which case the lower bound wins.
     /// </summary>
     public PriceBounds GetBounds(SkuContext ctx)
     {
@@ -32,7 +32,7 @@ public class GuardrailService
         if (IsSupplierOnlyDeadStock(ctx))
             lower = Math.Max(lower, ctx.CurrentPrice);
 
-        var upper = Math.Max(ctx.OldPrice, lower);
+        var upper = Math.Max(ctx.AnchorPrice, lower);
         return new PriceBounds(lower, upper);
     }
 
@@ -59,21 +59,21 @@ public class GuardrailService
             flags.Add(GuardrailFlags.MarginFloorClamped);
         }
 
-        if (price > ctx.OldPrice)
+        if (price > ctx.AnchorPrice)
         {
-            if (marginFloor > ctx.OldPrice)
+            if (marginFloor > ctx.AnchorPrice)
             {
-                // Even the undiscounted shelf price violates the margin floor. Hold the floor
+                // Even the undiscounted anchor price violates the margin floor. Hold the floor
                 // and flag loudly — this needs a human, not a discount.
                 price = marginFloor;
                 if (!flags.Contains(GuardrailFlags.MarginFloorClamped))
                     flags.Add(GuardrailFlags.MarginFloorClamped);
-                flags.Add(GuardrailFlags.MarginFloorAboveOldPrice);
+                flags.Add(GuardrailFlags.MarginFloorAboveAnchor);
             }
             else
             {
-                price = ctx.OldPrice;
-                flags.Add(GuardrailFlags.CappedAtOldPrice);
+                price = ctx.AnchorPrice;
+                flags.Add(GuardrailFlags.CappedAtAnchor);
             }
         }
 
@@ -82,7 +82,7 @@ public class GuardrailService
 
     private static decimal MarginFloor(SkuContext ctx) =>
         ctx.Pptcv.HasValue
-            ? VatMath.MinGrossPriceForMargin(ctx.Pptcv.Value, ctx.Band.MarginFloorPct, ctx.Options.VatRatePct)
+            ? VatMath.MinGrossPriceForMargin(ctx.Pptcv.Value, ctx.Band.MarginFloorPct, ctx.VatRatePct)
             : 0m;
 
     /// <summary>

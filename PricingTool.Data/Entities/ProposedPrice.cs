@@ -27,7 +27,10 @@ public class ProposedPrice
     public string Sku { get; set; } = "";
     public int? PriceBandId { get; set; }
 
+    /// <summary>Display-only shelf price (TierPrice.OldPrice).</summary>
     public decimal OldPrice { get; set; }
+    /// <summary>The anchor price (ProductPricing.FinalPrice) that drove the discount math and the cap.</summary>
+    public decimal AnchorPrice { get; set; }
     public decimal CurrentPrice { get; set; }
 
     /// <summary>PPTCV (cost) at run time — the value the price band was selected on. Null when unknown.</summary>

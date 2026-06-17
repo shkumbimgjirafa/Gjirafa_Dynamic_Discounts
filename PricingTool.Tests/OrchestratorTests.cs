@@ -56,6 +56,19 @@ internal class EfBulkWriter : IBulkWriteService
 
     public Task BulkInsertVotesAsync(IReadOnlyCollection<AlgorithmVoteRecord> votes, CancellationToken ct = default)
         => Task.CompletedTask;
+
+    public async Task DeleteElasticityForLayerAsync(int layerId, CancellationToken ct = default)
+    {
+        var existing = await _db.SkuElasticities.Where(e => e.LayerId == layerId).ToListAsync(ct);
+        _db.SkuElasticities.RemoveRange(existing);
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task BulkInsertElasticityAsync(IReadOnlyCollection<SkuElasticity> rows, CancellationToken ct = default)
+    {
+        _db.SkuElasticities.AddRange(rows);
+        await _db.SaveChangesAsync(ct);
+    }
 }
 
 public class OrchestratorTests
@@ -99,11 +112,9 @@ public class OrchestratorTests
     {
         var algorithms = new IPricingAlgorithm[]
         {
-            new SalesVelocityForecastAlgorithm(), new NewProductProtectionAlgorithm(),
-            new WarehouseStockAgingAlgorithm(), new StockoutRiskAlgorithm(),
+            new SellThroughAlgorithm(), new NewProductProtectionAlgorithm(),
             new PriceElasticityHeuristicAlgorithm(), new MarginTierAlgorithm(),
-            new DeadStockMarkdownAlgorithm(), new DiscountEffectivenessAlgorithm(),
-            new VelocityMomentumAlgorithm(), new SupplierVsLocalStockAlgorithm(),
+            new DeadStockMarkdownAlgorithm(),
         };
         var bulk = new EfBulkWriter(db);
         return new PricingRunOrchestrator(

@@ -29,14 +29,14 @@ public static class DbSeeder
     /// to the KS layer); this list keeps a fresh / in-memory DB self-sufficient. KS is first so it
     /// takes Id 1 when identity-generated. Confirmed source ids per Gjirafa.
     /// </summary>
-    public static readonly (string Brand, string Country, string Display, string OpDb, int StoreId, int CountryId, int WarehouseStoreId, string Currency, bool FilterVendors)[] LayerSeeds =
+    public static readonly (string Brand, string Country, string Display, string OpDb, int StoreId, int CountryId, int WarehouseStoreId, string Currency, bool FilterVendors, int SrPlatformId, int SrCompanyId, decimal VatRatePct)[] LayerSeeds =
     {
-        ("GjirafaMall", "KS", "GjirafaMall — Kosovo",          "GjirafaMall",      2, 1, 2, "EUR", true),
-        ("GjirafaMall", "MK", "GjirafaMall — North Macedonia", "GjirafaMall",      1, 3, 1, "MKD", true),
-        ("GjirafaMall", "AL", "GjirafaMall — Albania",         "GjirafaMall",      3, 2, 3, "ALL", true),
-        ("Gjirafa50",   "KS", "Gjirafa50 — Kosovo",            "GjirafaEcommerce", 2, 1, 2, "EUR", false),
-        ("Gjirafa50",   "MK", "Gjirafa50 — North Macedonia",   "GjirafaEcommerce", 1, 3, 1, "MKD", false),
-        ("Gjirafa50",   "AL", "Gjirafa50 — Albania",           "GjirafaEcommerce", 3, 2, 3, "ALL", false),
+        ("GjirafaMall", "KS", "GjirafaMall — Kosovo",          "GjirafaMall",      2, 1, 2, "EUR", true,  2, 0,  18m),
+        ("GjirafaMall", "MK", "GjirafaMall — North Macedonia", "GjirafaMall",      1, 3, 1, "MKD", true,  2, 1,  18m),
+        ("GjirafaMall", "AL", "GjirafaMall — Albania",         "GjirafaMall",      3, 2, 3, "ALL", true,  2, 3,  20m),
+        ("Gjirafa50",   "KS", "Gjirafa50 — Kosovo",            "GjirafaEcommerce", 2, 1, 2, "EUR", false, 1, 1,  18m),
+        ("Gjirafa50",   "MK", "Gjirafa50 — North Macedonia",   "GjirafaEcommerce", 1, 3, 1, "MKD", false, 3, 2,  18m),
+        ("Gjirafa50",   "AL", "Gjirafa50 — Albania",           "GjirafaEcommerce", 3, 2, 3, "ALL", false, 1, 19, 20m),
     };
 
     /// <summary>Band seed defaults (currency-agnostic). Margin floors are conservative starting points.</summary>
@@ -69,7 +69,10 @@ public static class DbSeeder
                     StoreId = l.StoreId,
                     TranslationCountryId = l.CountryId,
                     WarehouseStoreId = l.WarehouseStoreId,
+                    SrPlatformId = l.SrPlatformId,
+                    SrCompanyId = l.SrCompanyId,
                     Currency = l.Currency,
+                    VatRatePct = l.VatRatePct,
                     FilterVendors = l.FilterVendors,
                     ExcludeUnpublished = true,
                     RunTimeUtc = options.DefaultRunTimeUtc,

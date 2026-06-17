@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PricingTool.Data;
 
@@ -11,9 +12,11 @@ using PricingTool.Data;
 namespace PricingTool.Data.Migrations
 {
     [DbContext(typeof(PricingToolDbContext))]
-    partial class PricingToolDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260617102146_AddSkuElasticity")]
+    partial class AddSkuElasticity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -345,10 +348,6 @@ namespace PricingTool.Data.Migrations
 
                     b.Property<int>("TranslationCountryId")
                         .HasColumnType("int");
-
-                    b.Property<decimal>("VatRatePct")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("decimal(5,2)");
 
                     b.Property<int>("WarehouseStoreId")
                         .HasColumnType("int");

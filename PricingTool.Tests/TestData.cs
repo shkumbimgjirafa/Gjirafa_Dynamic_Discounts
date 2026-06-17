@@ -43,15 +43,20 @@ public static class TestData
         int zeroSaleStreakDays = 0,
         PriceBandConfig? band = null,
         PricingEngineOptions? options = null,
-        bool roundingDisabledForSku = false)
+        bool roundingDisabledForSku = false,
+        decimal? anchorPrice = null,
+        decimal? elasticity = null,
+        decimal vatRatePct = 18m)
     {
         return new SkuContext
         {
             Sku = "TEST-SKU",
+            AnchorPrice = anchorPrice ?? oldPrice,
             OldPrice = oldPrice,
             CurrentPrice = currentPrice,
             Pptcv = pptcv,
             GrossMarginPct = grossMarginPct,
+            Elasticity = elasticity,
             KsStock = ksStock,
             SupplierStock = supplierStock,
             Qty7 = qty7, Qty14 = qty14, Qty30 = qty30, Qty60 = qty60, Qty90 = qty90,
@@ -62,6 +67,7 @@ public static class TestData
             ZeroSaleStreakDays = zeroSaleStreakDays,
             Band = band ?? Band(),
             Options = options ?? new PricingEngineOptions(),
+            VatRatePct = vatRatePct,
             RoundingDisabledForSku = roundingDisabledForSku,
         };
     }

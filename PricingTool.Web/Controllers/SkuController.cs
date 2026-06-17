@@ -50,6 +50,7 @@ public class SkuController : Controller
                 Date = s.SnapshotDate,
                 CurrentPrice = s.CurrentPrice,
                 OldPrice = s.OldPrice,
+                AnchorPrice = s.AnchorPrice,
                 Qty7 = s.Qty7,
                 KsStock = s.LocalWarehouseStock,
                 SupplierStock = s.SupplierWarehouseStock,

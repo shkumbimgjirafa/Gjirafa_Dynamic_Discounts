@@ -31,8 +31,17 @@ public class Layer
     /// <summary>Warehouse store id used for the IsLocalToStoreIds local-stock split.</summary>
     public int WarehouseStoreId { get; set; }
 
+    /// <summary>SR_ProductsData PlatformId for elasticity scoping (paired with SrCompanyId).</summary>
+    public int SrPlatformId { get; set; }
+
+    /// <summary>SR_ProductsData CompanyId for elasticity scoping (paired with SrPlatformId).</summary>
+    public int SrCompanyId { get; set; }
+
     /// <summary>Display currency for this layer (EUR / MKD / ALL). Bands are denominated in it.</summary>
     public string Currency { get; set; } = "EUR";
+
+    /// <summary>This layer's VAT rate percent (18 for KS/MK, 20 for AL). VAT-incl prices ↔ VAT-excl cost.</summary>
+    public decimal VatRatePct { get; set; } = 18m;
 
     /// <summary>True = restrict to the GjirafaMall vendor set; false = all vendors (Gjirafa50).</summary>
     public bool FilterVendors { get; set; } = true;
@@ -50,6 +59,9 @@ public class Layer
 
     /// <summary>Set by the scheduler after each scheduled run for this layer.</summary>
     public DateTime? LastScheduledRunUtc { get; set; }
+
+    /// <summary>Set after each weekly elasticity fit for this layer.</summary>
+    public DateTime? LastElasticityFitUtc { get; set; }
 
     public bool IsActive { get; set; } = true;
     public int SortOrder { get; set; }

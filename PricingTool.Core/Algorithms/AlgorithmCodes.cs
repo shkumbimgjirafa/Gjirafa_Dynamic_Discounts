@@ -2,29 +2,25 @@ namespace PricingTool.Core.Algorithms;
 
 public static class AlgorithmCodes
 {
-    public const string VelocityForecast = "VELOCITY_FORECAST";
+    public const string SellThrough = "SELL_THROUGH";
     public const string NewProduct = "NEW_PRODUCT";
-    public const string StockAging = "STOCK_AGING";
-    public const string StockoutRisk = "STOCKOUT_RISK";
     public const string Elasticity = "ELASTICITY";
     public const string MarginTier = "MARGIN_TIER";
     public const string DeadStock = "DEAD_STOCK";
-    public const string DiscountEffectiveness = "DISCOUNT_EFFECTIVENESS";
-    public const string Momentum = "MOMENTUM";
-    public const string SupplierLocal = "SUPPLIER_LOCAL";
 
-    /// <summary>All algorithm codes with their default per-band weights (0–100) used for seeding.</summary>
+    /// <summary>
+    /// The active algorithm roster with default per-band weights (0–100) used for seeding.
+    /// Consolidated from the original 10: the velocity family (VELOCITY_FORECAST + STOCKOUT_RISK +
+    /// MOMENTUM) merged into SELL_THROUGH; STOCK_AGING, SUPPLIER_LOCAL and DISCOUNT_EFFECTIVENESS
+    /// retired (the last replaced by the fitted ELASTICITY signal + the margin floor). NEW_PRODUCT
+    /// ships enabled but stays silent until a reliable launch-date signal exists.
+    /// </summary>
     public static readonly IReadOnlyList<(string Code, string DisplayName, int DefaultWeight)> All = new[]
     {
-        (VelocityForecast, "Sales velocity + inventory forecast", 70),
-        (NewProduct, "New-product protection", 90),
-        (StockAging, "Warehouse-stock aging markdown", 50),
-        (StockoutRisk, "Stockout-risk protection", 80),
-        (Elasticity, "Price elasticity (heuristic)", 50),
-        (MarginTier, "Margin-tier prioritization", 40),
+        (SellThrough, "Sell-through (velocity + inventory)", 75),
         (DeadStock, "Dead-stock progressive markdown", 75),
-        (DiscountEffectiveness, "Discount-effectiveness correction", 65),
-        (Momentum, "Velocity-trend momentum", 45),
-        (SupplierLocal, "Supplier-vs-local stock positioning", 10),
+        (Elasticity, "Price elasticity (fitted)", 50),
+        (MarginTier, "Margin-tier prioritization", 40),
+        (NewProduct, "New-product protection", 90),
     };
 }

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PricingTool.Data;
 
@@ -11,9 +12,11 @@ using PricingTool.Data;
 namespace PricingTool.Data.Migrations
 {
     [DbContext(typeof(PricingToolDbContext))]
-    partial class PricingToolDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260617100617_ConsolidateAlgorithmRoster")]
+    partial class ConsolidateAlgorithmRoster
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -315,9 +318,6 @@ namespace PricingTool.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
-                    b.Property<DateTime?>("LastElasticityFitUtc")
-                        .HasColumnType("datetime2");
-
                     b.Property<DateTime?>("LastScheduledRunUtc")
                         .HasColumnType("datetime2");
 
@@ -334,21 +334,11 @@ namespace PricingTool.Data.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
-                    b.Property<int>("SrCompanyId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SrPlatformId")
-                        .HasColumnType("int");
-
                     b.Property<int>("StoreId")
                         .HasColumnType("int");
 
                     b.Property<int>("TranslationCountryId")
                         .HasColumnType("int");
-
-                    b.Property<decimal>("VatRatePct")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("decimal(5,2)");
 
                     b.Property<int>("WarehouseStoreId")
                         .HasColumnType("int");
@@ -657,60 +647,6 @@ namespace PricingTool.Data.Migrations
                     b.ToTable("ProposedPrices", "PricingTool");
                 });
 
-            modelBuilder.Entity("PricingTool.Data.Entities.SkuElasticity", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<decimal>("Coefficient")
-                        .HasPrecision(12, 6)
-                        .HasColumnType("decimal(12,6)");
-
-                    b.Property<int>("DistinctPricePoints")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("FittedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("Intercept")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("decimal(18,6)");
-
-                    b.Property<bool>("IsUsable")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("LayerId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ObservationCount")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("PriceCv")
-                        .HasPrecision(12, 6)
-                        .HasColumnType("decimal(12,6)");
-
-                    b.Property<decimal>("R2")
-                        .HasPrecision(9, 6)
-                        .HasColumnType("decimal(9,6)");
-
-                    b.Property<string>("Sku")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LayerId", "IsUsable");
-
-                    b.HasIndex("LayerId", "Sku")
-                        .IsUnique();
-
-                    b.ToTable("SkuElasticity", "PricingTool");
-                });
-
             modelBuilder.Entity("PricingTool.Data.Entities.SkuOverride", b =>
                 {
                     b.Property<int>("Id")
@@ -853,15 +789,6 @@ namespace PricingTool.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("PricingRun");
-                });
-
-            modelBuilder.Entity("PricingTool.Data.Entities.SkuElasticity", b =>
-                {
-                    b.HasOne("PricingTool.Data.Entities.Layer", null)
-                        .WithMany()
-                        .HasForeignKey("LayerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("PricingTool.Data.Entities.SkuOverride", b =>

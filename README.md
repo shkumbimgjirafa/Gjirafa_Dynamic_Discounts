@@ -40,7 +40,7 @@ migration; activating/deactivating or retuning a layer is a data edit (no redepl
 
 | Project | Purpose |
 |---|---|
-| `PricingTool.Core` | Domain: the 10 pricing algorithms, weighted scoring, guardrails, VAT math, psychological rounding (incl. currency-aware), demo data generator |
+| `PricingTool.Core` | Domain: the 5 pricing algorithms, weighted scoring, guardrails, VAT math, psychological rounding (incl. currency-aware), demo data generator |
 | `PricingTool.Data` | EF Core (migrations, `PricingTool` schema), per-layer source dataset readers, run orchestrator, bulk writer, CSV push integration, audit |
 | `PricingTool.Engine` | Background worker — scheduled recalculation, looping active layers (schedule read per layer from DB, admin-editable live) |
 | `PricingTool.Web` | ASP.NET Core admin UI + impact dashboard, layer switcher (dev-shim auth, Analyst/Manager roles) |
@@ -124,7 +124,7 @@ operational database per layer (`{opDb}` token). Inline mode is the source of tr
 
 | Key | Default | Meaning |
 |---|---|---|
-| `VatRatePct` | `18.0` | Kosovo standard VAT — **confirm with the team**. Shelf prices are VAT-inclusive; costs (PPTCV) and net revenue are VAT-exclusive. All margin math reconciles through this single value (`VatMath`). |
+| `VatRatePct` | `18.0` | Default/fallback VAT. The **effective rate is per layer** (`Layer.VatRatePct`: 18 for KS/MK, 20 for AL). Shelf prices are VAT-inclusive; costs (PPTCV) and net revenue are VAT-exclusive; all margin math reconciles through the layer's rate (`VatMath`). |
 | `StockoutRiskDays` | `14` | Algorithm 4 horizon: projected sellout within N days + healthy margin → vote discount off |
 | `NewProductProtectionDays` | `90` | Algorithm 2 window (inactive until a launch-date source exists — open decision) |
 | `ChangeConfirmationThresholdPct` | `20.0` | Proposals beyond ±this % require explicit confirmation at approval (enforced server-side) |
@@ -148,7 +148,7 @@ opt-outs live in `SkuOverrides` (scoped per layer).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
    matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
    band-enabled algorithm → weighted average of votes (band weight × vote confidence) →
-   **guardrail clamp** (margin floor with VAT reconciliation + OldPrice cap; no discount ceiling) →
+   **guardrail clamp** (margin floor with VAT reconciliation + anchor/FinalPrice cap; no discount ceiling) →
    **psychological rounding** that never violates the guardrails.
 4. Write `ProposedPrices` + every `AlgorithmVotes` row, wrapped in a `PricingRuns` record
    (status, SKU/error counts) — failures and partial runs stay visible.
@@ -163,13 +163,15 @@ Selected per band (per layer), and always clamped inside the band guardrails:
 | `.99` / `.95` endings, whole number, 995-style (€5 steps) | EUR layers |
 | **…99 whole-currency** (e.g. 6149 → 6199, 9990 → 9999) | MKD / ALL layers — `.99`/`.95` are meaningless for currencies with no minor unit |
 
-### The 10 algorithms
+### The 5 algorithms
 
-`VELOCITY_FORECAST`, `NEW_PRODUCT`, `STOCK_AGING`, `STOCKOUT_RISK`, `ELASTICITY`,
-`MARGIN_TIER`, `DEAD_STOCK`, `DISCOUNT_EFFECTIVENESS`, `MOMENTUM`, `SUPPLIER_LOCAL` —
-each an `IPricingAlgorithm` in `PricingTool.Core/Algorithms`, individually toggleable and
-weighted per band. Algorithms return `null` when they have no opinion; if nothing votes,
-the price stays unchanged.
+`SELL_THROUGH`, `DEAD_STOCK`, `ELASTICITY`, `MARGIN_TIER`, `NEW_PRODUCT` — each an
+`IPricingAlgorithm` in `PricingTool.Core/Algorithms`, individually toggleable and weighted per
+band. Algorithms return `null` when they have no opinion; if nothing votes, the price stays
+unchanged. (Consolidated from the original 10: `SELL_THROUGH` merges the former velocity-forecast
++ stockout-risk + momentum; `STOCK_AGING`, `SUPPLIER_LOCAL` and `DISCOUNT_EFFECTIVENESS` were
+retired — the last replaced by the fitted `ELASTICITY` + the margin floor; `NEW_PRODUCT` is
+dormant until a launch-date signal exists.)
 
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
 history: consecutive daily snapshots with zero trailing-7d sales.

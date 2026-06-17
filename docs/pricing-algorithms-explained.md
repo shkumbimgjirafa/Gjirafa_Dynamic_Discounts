@@ -1,6 +1,6 @@
 # How the Pricing Tool Decides a Price — In Plain Words
 
-This document explains, without any code, the *logic* behind each of the 10 pricing
+This document explains, without any code, the *logic* behind each of the 5 pricing
 algorithms and how they come together into one proposed price. It's written for anyone
 on the team — you don't need to be an engineer to follow it.
 
@@ -12,7 +12,7 @@ For every product (SKU), once per run, the tool does this:
 
 1. **Gathers the facts** — current price, full/shelf price, cost, stock on hand, and how
    many units sold over the last 7 / 14 / 30 / 60 / 90 days.
-2. **Asks 10 "advisors" (the algorithms)** what the price should be. Each one looks at the
+2. **Asks 5 "advisors" (the algorithms)** what the price should be. Each one looks at the
    facts from its own angle and either **votes** for a price or **stays silent** (says
    "no opinion").
 3. **Blends the votes** into one number — a *weighted average*, where louder, more-confident
@@ -25,8 +25,9 @@ For every product (SKU), once per run, the tool does this:
 The result is a **proposal**, not a live price change. A human reviews and approves it, and
 prices only go live through the explicit **Push** step.
 
-> **Important:** The tool only ever proposes **discounts** (prices at or below the full
-> shelf price). It never raises a price above the shelf price.
+> **Important:** The tool only ever proposes **discounts** (prices at or below the **anchor /
+> FinalPrice**). It never raises a price above the anchor. (The displayed "shelf"/OldPrice is
+> kept for reference but no longer governs the ceiling or the discount math.)
 
 ---
 
@@ -34,7 +35,8 @@ prices only go live through the explicit **Push** step.
 
 | Term | Plain meaning |
 |---|---|
-| **Shelf price (OldPrice)** | The full, "list" price — the starting point. All discounts are measured down from here. |
+| **Anchor price (FinalPrice)** | The true reference/list price (from `ProductPricing.FinalPrice`). All discounts **and** the price ceiling are measured from here. |
+| **Shelf price (OldPrice)** | The platform's strike-through "old" price. Shown for reference only — it no longer drives any calculation. |
 | **Current price** | What the product actually sells for today (may already be discounted). |
 | **Cost (PPTCV)** | What the item costs us to buy. Used for margin. If it's missing, the SKU is skipped — we never guess it. |
 | **Margin** | How much of the selling price is profit after cost (and after VAT is stripped out). |
@@ -48,7 +50,12 @@ last 7 days at 50%, the last 14 days at 30%, and the last 30 days at 20%.
 
 ---
 
-## The 10 algorithms
+## The 5 algorithms
+
+> Consolidated from the original 10: the velocity family (velocity-forecast + stockout-risk +
+> momentum) is now one **Sell-through** advisor; warehouse-stock-aging, supplier-vs-local and
+> discount-effectiveness were retired (covered by other advisors / the fitted elasticity / the
+> guardrails). Section numbers below are kept for reference.
 
 Each one is an independent advisor. It only speaks when its specific situation applies;
 otherwise it abstains. The **default weight** (0–100) is how much its vote counts before
@@ -56,20 +63,21 @@ confidence is factored in — it can be tuned per price band, or turned off enti
 
 ---
 
-### 1. Sales velocity + inventory forecast — *default weight 70*
+### 1. Sell-through (velocity + inventory) — *default weight 75*
 **The question it asks:** "At the current selling speed, will this stock clear in a
-reasonable time?"
+reasonable time — and is demand speeding up or slowing down?"
 
-It projects how many days until sellout, then nudges the discount accordingly:
+This is the consolidated velocity/inventory advisor (it merges the former velocity-forecast,
+stockout-risk and momentum algorithms, so the same sales-speed signal isn't counted three
+times in the blend). It projects days-to-sellout and reads the short-vs-long velocity trend:
 
-- **Sells out within ~3 weeks** → *shave* the discount (we're selling fast; no need to give
-  margin away).
-- **On pace (3–6 weeks)** → hold steady.
-- **Slow (1.5–3 months of stock)** → discount a little deeper (+3pp).
-- **Very slow (3–6 months)** → deeper still (+6pp).
-- **Over 6 months of stock** → real markdown pressure (+10pp).
+- **About to sell out (~≤2 weeks) on a healthy margin** → **remove the discount** (no point
+  burning margin on something that will sell out anyway). Never a markdown.
+- **Fast (≤3 weeks)** → *shave* the discount. **On pace** → hold. **Slow (1.5–6 months)** →
+  deepen (+3 to +6pp). **Over 6 months of stock** → markdown pressure (+10pp).
+- **Trend modifier:** accelerating demand tempers the discount shallower; decelerating deepens it.
 
-**How sure it is:** more sales history = more confidence in the forecast.
+**How sure it is:** more sales history = more confidence.
 **Silent when:** there's no stock, or nothing is selling at all (that's dead-stock territory).
 
 ---
@@ -83,40 +91,28 @@ It will switch on once launch dates are available.
 
 ---
 
-### 3. Warehouse-stock aging markdown — *default weight 50*
-**The situation:** The item has stock, sold *something* in the last 90 days (so it's not
-totally dead), but hasn't sold anything this week and has been quiet for at least a week.
-
-**What it does:** Deepen the discount by **2pp for every week of silence**, up to +12pp.
-The longer the dry spell, the more confident the vote.
-
-This is the "gentle nudge for a slowing item" — distinct from full dead stock (#7).
+### 3. ~~Warehouse-stock aging markdown~~ — *merged into #1*
+The "slowing but not dead" case is now handled by the Sell-through advisor (#1). (In practice
+it never fired and overlapped #1.)
 
 ---
 
-### 4. Stockout-risk protection — *default weight 80*
-**The insight:** If something is about to sell out *and* it's already making healthy margin,
-discounting it just burns profit for no reason.
-
-**What it does:** If projected to sell out within ~14 days **and** margin is comfortably above
-the band's floor, it votes to **remove the discount** (go to full price). The sooner the
-sellout, the stronger the conviction.
+### 4. ~~Stockout-risk protection~~ — *merged into #1*
+"Remove the discount when it's about to sell out on a healthy margin" is now the fast extreme
+of the Sell-through advisor (#1).
 
 ---
 
-### 5. Price elasticity (heuristic) — *default weight 50*
-**The question:** "When we discounted more, did customers actually buy more?"
+### 5. Price elasticity (fitted) — *default weight 50*
+**The question:** "Does demand here actually respond to price?"
 
-It compares recent discounting (last 30 days) against the longer baseline (90 days), and
-checks whether sales sped up:
+A per-SKU elasticity is **fitted weekly** from years of transaction history (a log-log
+regression of units sold against the realized price). Only SKUs with enough price variation
+and a trustworthy fit get a usable coefficient.
 
-- **We discounted deeper but sales barely moved** → demand here is *insensitive* to price →
-  **pull the discount back** to the baseline level (we were giving money away).
-- **Sales jumped clearly under the deeper discount** → demand *responds* to price →
-  **protect the current (discounted) price**.
-
-**Silent when:** recent and baseline discounting are about the same (nothing to compare), or
-there's not enough sales data.
+- **Clearly elastic** (a price cut reliably lifts units) → **protect / extend the discount**.
+- **Inelastic, unit-elastic, or no trustworthy fit** → **stay silent** — left to the margin-tier
+  (#6) advisor and the margin-floor guardrail; we don't claw back discounts on thin evidence.
 
 ---
 
@@ -147,40 +143,23 @@ below.
 
 ---
 
-### 8. Discount-effectiveness correction — *default weight 65*
-**The watchdog:** "We're running a real discount — is it doing anything?"
-
-If the item is currently at least 10% off, but its recent sales pace (last 14 days) is flat
-versus the 90-day baseline, the discount isn't earning its keep → **halve it**. Stop giving
-margin away for sales we'd have made anyway.
-
-(Truly dead items are left to #7; this one is about *active but wasted* discounts.)
+### 8. ~~Discount-effectiveness correction~~ — *retired*
+Removed: a crude heuristic (raw velocity vs *today's* shelf discount) that ignored the discount
+actually in effect during the window and over-fired on near-dead items. "Is this discount
+working?" is now answered by the fitted **Price elasticity (#5)** signal, with the margin floor
+as the backstop.
 
 ---
 
-### 9. Velocity-trend momentum — *default weight 45*
-**The idea:** Is demand speeding up or slowing down right now?
-
-- **Accelerating** (last week's pace is ≥1.5× the 90-day pace) → demand is coming anyway →
-  **trim the discount by a third**.
-- **Decelerating** (last week is ≤0.5× the 90-day pace) → losing steam → **add a modest
-  3pp discount** to hold volume.
-- **Steady** → no opinion.
-
-**Silent when:** there's too little sales history to trust the trend (fewer than 5 units in
-90 days).
+### 9. ~~Velocity-trend momentum~~ — *merged into #1*
+The "is demand accelerating or decelerating" signal is now the trend modifier inside the
+Sell-through advisor (#1).
 
 ---
 
-### 10. Supplier-vs-local stock positioning — *default weight 10 (low)*
-**The angle:** *Where* the stock sits affects how fast we can fulfill it.
-
-- **Mostly local stock (≥80%)** and **selling well** (≥10 in 30 days) → lean toward a
-  **fuller price** (cut the discount to three-quarters).
-
-This is a gentle tie-breaker, which is why its default weight is low. It only ever leans
-*toward fuller price* now — it never discounts supplier-only stock, because we don't give
-margin away on inventory that sits only in supplier warehouses and isn't selling.
+### 10. ~~Supplier-vs-local stock positioning~~ — *retired*
+Marginal in practice and overlapped #1; supplier-only dead stock is already protected by the
+engine-wide guardrail (it is never marked down).
 
 ---
 
@@ -209,8 +188,9 @@ After the averaging, three non-negotiable limits are applied:
 
 1. **Margin floor** — the price can't drop below the level that still earns the band's
    minimum margin on cost. This is the *only* limit on how deep a discount can go.
-2. **Shelf-price cap** — the price can't go above the full shelf price. The tool proposes
-   discounts, not increases.
+2. **Anchor-price cap** — the price can't go above the anchor (FinalPrice). The tool proposes
+   discounts off the true reference, not increases above it. (The display "shelf"/OldPrice no
+   longer governs this.)
 3. **No markdown on supplier-only dead stock** — if every unit sits in a supplier warehouse
    (none in our own) **and** nothing has sold in 90 days, the price is never marked *below*
    today's price. We don't give margin away on inventory we don't hold that isn't selling.
@@ -256,18 +236,13 @@ to cheap vs. expensive products, without changing any algorithm itself.
 
 ## One-line summary of each algorithm
 
-| # | Algorithm | Pushes price… | When |
-|---|---|---|---|
-| 1 | Sales velocity + inventory forecast | down if slow, up if fast | there's stock and some sales |
-| 2 | New-product protection | up (full price) | freshly launched (≤90 days) |
-| 3 | Warehouse-stock aging markdown | down | has stock, quiet ≥1 week, not fully dead |
-| 4 | Stockout-risk protection | up (full price) | will sell out soon & margin is healthy |
-| 5 | Price elasticity | back to baseline / hold | recent deeper discount, measured response |
-| 6 | Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
-| 7 | Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in **local** stock |
-| 8 | Discount-effectiveness correction | up (halve discount) | discounting but sales are flat |
-| 9 | Velocity-trend momentum | up if accelerating, down if slowing | enough sales to read a trend |
-| 10 | Supplier-vs-local stock positioning | up (toward fuller price) | mostly-local stock selling well |
+| Algorithm | Pushes price… | When |
+|---|---|---|
+| Sell-through (velocity + inventory) | up if fast / selling out, down if slow | there's stock and some sales |
+| Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in **local** stock |
+| Price elasticity (fitted) | protect / extend discount | demand is provably elastic (weekly-fitted) |
+| Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
+| New-product protection (dormant) | up (full price) | freshly launched — *off until a launch-date signal exists* |
 
 *All numeric thresholds above are the current defaults and can be tuned. Discounts are always
 measured against the full shelf price; margins are always computed after VAT is removed.*

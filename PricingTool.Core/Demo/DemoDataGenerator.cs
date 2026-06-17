@@ -77,6 +77,12 @@ public class DemoDataGenerator
 
         var currentPrice = Math.Round(oldPrice * (1 - archetype.DiscountFraction), 2);
 
+        // Demo anchor (= ProductPricing.FinalPrice): the shelf OldPrice sits a deterministic 8–25%
+        // above the true reference, so the demo exercises the FinalPrice-anchor behaviour
+        // (anchor ≠ shelf, and for low-discount archetypes the anchor caps below today's price).
+        var anchorInflation = 0.08m + ((seq * 7 + bandIndex * 3 + archIndex) % 18) / 100m;
+        var anchorPrice = Math.Round(oldPrice * (1m - anchorInflation), 2);
+
         // Trend factor: archetype velocity drifts over demo time so momentum/elasticity fire.
         var elapsed30d = (decimal)(asOfUtc.Date - new DateTime(2026, 1, 1)).TotalDays / 30m;
         var trendFactor = (decimal)Math.Pow((double)archetype.VelocityTrend, (double)Math.Min(4m, Math.Max(0m, elapsed30d)));
@@ -114,6 +120,7 @@ public class DemoDataGenerator
         {
             Sku = sku,
             OldPrice = oldPrice,
+            AnchorPrice = anchorPrice,
             CurrentPrice = currentPrice,
             CurrentDiscountPct = oldPrice > 0 ? Math.Round((oldPrice - currentPrice) / oldPrice, 4) : 0,
             Pptcv = pptcv,

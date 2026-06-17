@@ -19,6 +19,8 @@ public interface IBulkWriteService
     Task BulkInsertSnapshotsAsync(IReadOnlyCollection<DailySnapshot> rows, CancellationToken ct = default);
     Task BulkInsertProposalsAsync(IReadOnlyCollection<ProposedPrice> proposals, CancellationToken ct = default);
     Task BulkInsertVotesAsync(IReadOnlyCollection<AlgorithmVoteRecord> votes, CancellationToken ct = default);
+    Task DeleteElasticityForLayerAsync(int layerId, CancellationToken ct = default);
+    Task BulkInsertElasticityAsync(IReadOnlyCollection<SkuElasticity> rows, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -101,6 +103,30 @@ END";
     public Task BulkInsertVotesAsync(IReadOnlyCollection<AlgorithmVoteRecord> votes, CancellationToken ct = default)
         => WriteAsync("[PricingTool].[AlgorithmVotes]", BuildVoteTable(votes), SqlBulkCopyOptions.Default, ct);
 
+    public async Task DeleteElasticityForLayerAsync(int layerId, CancellationToken ct = default)
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandTimeout = CopyTimeoutSeconds;
+        cmd.CommandText = @"
+DECLARE @rows int = 1;
+WHILE @rows > 0
+BEGIN
+    DELETE TOP (50000) FROM [PricingTool].[SkuElasticity] WHERE [LayerId] = @layer;
+    SET @rows = @@ROWCOUNT;
+END";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@layer";
+        p.DbType = DbType.Int32;
+        p.Value = layerId;
+        cmd.Parameters.Add(p);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public Task BulkInsertElasticityAsync(IReadOnlyCollection<SkuElasticity> rows, CancellationToken ct = default)
+        => WriteAsync("[PricingTool].[SkuElasticity]", BuildElasticityTable(rows), SqlBulkCopyOptions.Default, ct);
+
     private async Task WriteAsync(string destination, DataTable table, SqlBulkCopyOptions options, CancellationToken ct)
     {
         if (table.Rows.Count == 0) return;
@@ -128,7 +154,7 @@ END";
         t.Columns.Add("SnapshotDate", typeof(DateTime));
         t.Columns.Add("PulledAtUtc", typeof(DateTime));
         t.Columns.Add("Sku", typeof(string));
-        AddNullableDecimals(t, "OldPrice", "CurrentPrice", "CurrentDiscountPct", "Pptcv", "GrossMargin");
+        AddNullableDecimals(t, "OldPrice", "AnchorPrice", "CurrentPrice", "CurrentDiscountPct", "Pptcv", "GrossMargin");
         t.Columns.Add("LocalWarehouseStock", typeof(int));
         t.Columns.Add("SupplierWarehouseStock", typeof(int));
         foreach (var w in new[] { "7", "14", "30", "60", "90" })
@@ -143,7 +169,7 @@ END";
         {
             t.Rows.Add(
                 r.LayerId, r.SnapshotDate, r.PulledAtUtc, r.Sku,
-                Box(Round(r.OldPrice, 2)), Box(Round(r.CurrentPrice, 2)),
+                Box(Round(r.OldPrice, 2)), Box(Round(r.AnchorPrice, 2)), Box(Round(r.CurrentPrice, 2)),
                 Box(Round(r.CurrentDiscountPct, 6)), Box(Round(r.Pptcv, 4)), Box(Round(r.GrossMargin, 4)),
                 r.LocalWarehouseStock, r.SupplierWarehouseStock,
                 r.Qty7, Round(r.Net7, 2), Box(Round(r.Disc7, 6)),
@@ -166,6 +192,7 @@ END";
         t.Columns.Add("PriceBandId", typeof(int)).AllowDBNull = true;
         AddNullableDecimals(t, "RawWeightedPrice", "Pptcv");
         t.Columns.Add("OldPrice", typeof(decimal));
+        t.Columns.Add("AnchorPrice", typeof(decimal));
         t.Columns.Add("CurrentPrice", typeof(decimal));
         t.Columns.Add("ProposedPriceValue", typeof(decimal));
         t.Columns.Add("ChangePct", typeof(decimal));
@@ -183,7 +210,7 @@ END";
             t.Rows.Add(
                 p.Id, p.PricingRunId, p.LayerId, p.Sku, Box(p.PriceBandId),
                 Box(Round(p.RawWeightedPrice, 4)), Box(Round(p.Pptcv, 4)),
-                Round(p.OldPrice, 2), Round(p.CurrentPrice, 2), Round(p.ProposedPriceValue, 2),
+                Round(p.OldPrice, 2), Round(p.AnchorPrice, 2), Round(p.CurrentPrice, 2), Round(p.ProposedPriceValue, 2),
                 Round(p.ChangePct, 4), p.HasChange,
                 p.ReasonCodes, p.GuardrailFlags, (int)p.Status,
                 Box(p.SkipReason), Box(p.ReviewedBy), Box(p.ReviewedUtc), Box(p.PushedUtc));
@@ -210,6 +237,31 @@ END";
                 Round(v.SuggestedPrice, 4), Round(v.Confidence, 4),
                 v.BandWeight, Round(v.EffectiveWeight, 4),
                 v.ReasonCode, v.ReasonText);
+        }
+        return t;
+    }
+
+    private static DataTable BuildElasticityTable(IReadOnlyCollection<SkuElasticity> rows)
+    {
+        var t = new DataTable();
+        t.Columns.Add("LayerId", typeof(int));
+        t.Columns.Add("Sku", typeof(string));
+        t.Columns.Add("Coefficient", typeof(decimal));
+        t.Columns.Add("Intercept", typeof(decimal));
+        t.Columns.Add("R2", typeof(decimal));
+        t.Columns.Add("ObservationCount", typeof(int));
+        t.Columns.Add("DistinctPricePoints", typeof(int));
+        t.Columns.Add("PriceCv", typeof(decimal));
+        t.Columns.Add("IsUsable", typeof(bool));
+        t.Columns.Add("FittedAtUtc", typeof(DateTime));
+
+        foreach (var r in rows)
+        {
+            t.Rows.Add(
+                r.LayerId, r.Sku,
+                Round(r.Coefficient, 6), Round(r.Intercept, 6), Round(r.R2, 6),
+                r.ObservationCount, r.DistinctPricePoints, Round(r.PriceCv, 6),
+                r.IsUsable, r.FittedAtUtc);
         }
         return t;
     }

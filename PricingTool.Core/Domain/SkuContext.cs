@@ -8,15 +8,26 @@ namespace PricingTool.Core.Domain;
 /// today's snapshot row, derived metrics, band config and engine options.
 ///
 /// Unit conventions (see README):
-///  - OldPrice / CurrentPrice / all suggested prices: EUR, VAT-INCLUSIVE shelf prices.
-///  - Pptcv (unit cost) and NetN revenue: EUR, VAT-EXCLUSIVE.
+///  - AnchorPrice / OldPrice / CurrentPrice / all suggested prices: the LAYER'S display currency
+///    (EUR/MKD/ALL), VAT-INCLUSIVE. All money for one SKU is in that single currency — the engine
+///    never mixes currencies within a layer (FinalPrice, TierPrice, PPTCV and SR history all match).
+///  - Pptcv (unit cost) and NetN revenue: same layer currency, VAT-EXCLUSIVE.
 ///  - Discount percentages are decimal fractions (0.39 = 39%).
 ///  - QtyN is 0 when there were no sales; DiscN is null when there were no sales. 0 and null mean different things.
 /// </summary>
 public class SkuContext
 {
     public required string Sku { get; init; }
-    public required decimal OldPrice { get; init; }
+
+    /// <summary>
+    /// The pricing ANCHOR: the reference/list price every discount and the guardrail ceiling are
+    /// measured from. Sourced from ProductPricing.FinalPrice (falls back to the shelf OldPrice when absent).
+    /// </summary>
+    public required decimal AnchorPrice { get; init; }
+
+    /// <summary>Display-only shelf/strikethrough price (TierPrice.OldPrice). Carried for the UI; never used in pricing math.</summary>
+    public decimal OldPrice { get; init; }
+
     public required decimal CurrentPrice { get; init; }
 
     /// <summary>Purchase cost (VAT-exclusive EUR). Null cost SKUs are skipped before algorithms run.</summary>
@@ -24,6 +35,9 @@ public class SkuContext
 
     /// <summary>Gross margin percent from the source pricing table (32.24 = 32.24%). May be null.</summary>
     public decimal? GrossMarginPct { get; init; }
+
+    /// <summary>Fitted log-log price elasticity for this SKU in this layer; null when missing or not usable.</summary>
+    public decimal? Elasticity { get; init; }
 
     public int KsStock { get; init; }
     public int SupplierStock { get; init; }
@@ -61,6 +75,9 @@ public class SkuContext
     public required PriceBandConfig Band { get; init; }
     public required PricingEngineOptions Options { get; init; }
 
+    /// <summary>This layer's VAT rate percent (18 for KS/MK, 20 for AL). Reconciles VAT-incl prices with VAT-excl cost.</summary>
+    public decimal VatRatePct { get; init; } = 18m;
+
     /// <summary>Per-SKU override that disables psychological rounding even when the band enables it.</summary>
     public bool RoundingDisabledForSku { get; init; }
 
@@ -68,9 +85,9 @@ public class SkuContext
 
     public int TotalStock => KsStock + SupplierStock;
 
-    /// <summary>Today's shelf discount as a fraction of OldPrice, clamped to [0, 1).</summary>
+    /// <summary>Today's discount as a fraction of the anchor price, clamped to [0, 1).</summary>
     public decimal CurrentDiscountFraction =>
-        OldPrice <= 0 ? 0 : Math.Clamp((OldPrice - CurrentPrice) / OldPrice, 0m, 0.99m);
+        AnchorPrice <= 0 ? 0 : Math.Clamp((AnchorPrice - CurrentPrice) / AnchorPrice, 0m, 0.99m);
 
     public decimal Velocity7 => Qty7 / 7m;
     public decimal Velocity14 => Qty14 / 14m;
@@ -87,12 +104,12 @@ public class SkuContext
         WeightedDailyVelocity > 0 ? TotalStock / WeightedDailyVelocity : null;
 
     /// <summary>Margin percent at the current selling price computed from PPTCV (VAT reconciled). Null without cost.</summary>
-    public decimal? CurrentMarginPct => VatMath.MarginPct(CurrentPrice, Pptcv, Options.VatRatePct);
+    public decimal? CurrentMarginPct => VatMath.MarginPct(CurrentPrice, Pptcv, VatRatePct);
 
     /// <summary>Best available margin signal: source GrossMargin, falling back to the computed current margin.</summary>
     public decimal? EffectiveMarginPct => GrossMarginPct ?? CurrentMarginPct;
 
-    /// <summary>Shelf price that applies the given discount fraction to OldPrice.</summary>
+    /// <summary>Price that applies the given discount fraction to the anchor price.</summary>
     public decimal PriceAtDiscount(decimal discountFraction) =>
-        OldPrice * (1 - Math.Clamp(discountFraction, 0m, 0.99m));
+        AnchorPrice * (1 - Math.Clamp(discountFraction, 0m, 0.99m));
 }

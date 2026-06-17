@@ -41,7 +41,7 @@ public class GuardrailTests
         var result = _guardrails.Clamp(ctx, 130m);
 
         Assert.Equal(100m, result.Price);
-        Assert.Contains(GuardrailFlags.CappedAtOldPrice, result.Flags);
+        Assert.Contains(GuardrailFlags.CappedAtAnchor, result.Flags);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class GuardrailTests
 
         Assert.Equal(132.75m, result.Price);
         Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
-        Assert.Contains(GuardrailFlags.MarginFloorAboveOldPrice, result.Flags);
+        Assert.Contains(GuardrailFlags.MarginFloorAboveAnchor, result.Flags);
     }
 
     [Fact]
@@ -162,5 +162,44 @@ public class GuardrailTests
 
         Assert.Equal(70m, result.Price);
         Assert.Empty(result.Flags);
+    }
+
+    // ---- Anchor (FinalPrice) drives the ceiling, not the display-only OldPrice -------------
+
+    [Fact]
+    public void Clamp_CapsAtAnchor_NotInflatedOldPrice()
+    {
+        // The anchor (FinalPrice) 80 sits below the inflated shelf OldPrice 120. A vote above the
+        // anchor is capped at the anchor — the shelf no longer governs the ceiling.
+        var ctx = TestData.Ctx(oldPrice: 120m, anchorPrice: 80m, currentPrice: 75m, pptcv: 20m);
+
+        var result = _guardrails.Clamp(ctx, 100m);
+
+        Assert.Equal(80m, result.Price);
+        Assert.Contains(GuardrailFlags.CappedAtAnchor, result.Flags);
+    }
+
+    [Fact]
+    public void Clamp_CurrentAboveAnchor_PullsDownToAnchor()
+    {
+        // Today's selling price 90 is above the true anchor 80 (the inflated shelf gave a fake
+        // discount). Holding today's price is capped down to the anchor — an intended markdown.
+        var ctx = TestData.Ctx(oldPrice: 120m, anchorPrice: 80m, currentPrice: 90m, pptcv: 20m);
+
+        var result = _guardrails.Clamp(ctx, 90m);
+
+        Assert.Equal(80m, result.Price);
+        Assert.Contains(GuardrailFlags.CappedAtAnchor, result.Flags);
+    }
+
+    [Fact]
+    public void Bounds_UpperIsAnchor_NotOldPrice()
+    {
+        var ctx = TestData.Ctx(oldPrice: 120m, anchorPrice: 80m, pptcv: 20m,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        var bounds = _guardrails.GetBounds(ctx);
+
+        Assert.Equal(80m, bounds.Upper);
     }
 }

@@ -27,6 +27,7 @@ public class PricingToolDbContext : DbContext
     public DbSet<AuditLogEntry> AuditLog => Set<AuditLogEntry>();
     public DbSet<ToolSetting> ToolSettings => Set<ToolSetting>();
     public DbSet<SkuOverride> SkuOverrides => Set<SkuOverride>();
+    public DbSet<SkuElasticity> SkuElasticities => Set<SkuElasticity>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -43,6 +44,7 @@ public class PricingToolDbContext : DbContext
             e.Property(x => x.OperationalDatabase).HasMaxLength(128);
             e.Property(x => x.Currency).HasMaxLength(8);
             e.Property(x => x.RunTimeUtc).HasMaxLength(8);
+            e.Property(x => x.VatRatePct).HasPrecision(5, 2);
         });
 
         builder.Entity<DailySnapshot>(e =>
@@ -54,7 +56,7 @@ public class PricingToolDbContext : DbContext
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.SnapshotDate).HasColumnType("date");
 
-            foreach (var p in new[] { nameof(DailySnapshot.OldPrice), nameof(DailySnapshot.CurrentPrice) })
+            foreach (var p in new[] { nameof(DailySnapshot.OldPrice), nameof(DailySnapshot.AnchorPrice), nameof(DailySnapshot.CurrentPrice) })
                 e.Property(p).HasPrecision(18, 2);
             e.Property(x => x.Pptcv).HasPrecision(18, 4);
             e.Property(x => x.GrossMargin).HasPrecision(9, 4);
@@ -90,6 +92,7 @@ public class PricingToolDbContext : DbContext
             e.HasIndex(x => new { x.PricingRunId, x.Status, x.AbsChangePct });
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.OldPrice).HasPrecision(18, 2);
+            e.Property(x => x.AnchorPrice).HasPrecision(18, 2);
             e.Property(x => x.CurrentPrice).HasPrecision(18, 2);
             e.Property(x => x.Pptcv).HasPrecision(18, 4);
             e.Property(x => x.RawWeightedPrice).HasPrecision(18, 4);
@@ -188,6 +191,19 @@ public class PricingToolDbContext : DbContext
             e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.Note).HasMaxLength(512);
+        });
+
+        builder.Entity<SkuElasticity>(e =>
+        {
+            e.ToTable("SkuElasticity");
+            e.HasIndex(x => new { x.LayerId, x.Sku }).IsUnique();
+            e.HasIndex(x => new { x.LayerId, x.IsUsable });
+            e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Sku).HasMaxLength(64);
+            e.Property(x => x.Coefficient).HasPrecision(12, 6);
+            e.Property(x => x.Intercept).HasPrecision(18, 6);
+            e.Property(x => x.R2).HasPrecision(9, 6);
+            e.Property(x => x.PriceCv).HasPrecision(12, 6);
         });
     }
 }
