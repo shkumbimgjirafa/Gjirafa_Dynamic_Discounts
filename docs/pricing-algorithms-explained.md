@@ -17,8 +17,8 @@ For every product (SKU), once per run, the tool does this:
    "no opinion").
 3. **Blends the votes** into one number — a *weighted average*, where louder, more-confident
    advisors pull the result more.
-4. **Applies hard limits (guardrails)** — never lose too much margin, never discount more
-   than allowed, never price above the shelf price.
+4. **Applies hard limits (guardrails)** — never below the margin floor, never above the shelf
+   price, and never marks down supplier-only stock that isn't selling.
 5. **Rounds to a nice-looking price** (e.g. ends in .99) — but only if rounding doesn't
    break the guardrails.
 
