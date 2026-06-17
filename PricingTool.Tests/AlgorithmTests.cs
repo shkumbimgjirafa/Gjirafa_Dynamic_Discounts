@@ -129,15 +129,36 @@ public class ElasticityTests
     private readonly PriceElasticityHeuristicAlgorithm _algorithm = new();
 
     [Fact]
-    public void ElasticCoefficient_ProtectsCurrentPrice()
+    public void ElasticCoefficient_VotesProfitMaxPrice()
     {
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 75m, elasticity: -2.0m);
+        // E=-2 → markup E/(E+1)=2 over cost 40 = 80 net → 94.40 gross at 18% VAT.
+        var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 75m, pptcv: 40m, elasticity: -2.0m);
 
         var vote = _algorithm.Evaluate(ctx);
 
         Assert.NotNull(vote);
-        Assert.Equal(75m, vote!.SuggestedPrice);
-        Assert.Equal("ELASTIC_RESPONSE", vote.ReasonCode);
+        Assert.Equal(94.40m, vote!.SuggestedPrice);
+        Assert.Equal("ELASTIC_OPTIMAL", vote.ReasonCode);
+    }
+
+    [Fact]
+    public void HighlyElastic_VotesNearerCost_AMarkdown()
+    {
+        // E=-5 → markup 1.25 over cost 40 = 50 net → 59.00 gross, below the 90 current → markdown.
+        var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 90m, pptcv: 40m, elasticity: -5.0m);
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal(59.00m, vote!.SuggestedPrice);
+        Assert.True(vote.SuggestedPrice < ctx.CurrentPrice);
+    }
+
+    [Fact]
+    public void ElasticButNoCost_StaysSilent()
+    {
+        var ctx = TestData.Ctx(currentPrice: 75m, pptcv: null, elasticity: -2.0m);
+        Assert.Null(_algorithm.Evaluate(ctx));
     }
 
     [Fact]

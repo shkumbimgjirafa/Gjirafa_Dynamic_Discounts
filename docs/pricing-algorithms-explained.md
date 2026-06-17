@@ -110,9 +110,12 @@ A per-SKU elasticity is **fitted weekly** from years of transaction history (a l
 regression of units sold against the realized price). Only SKUs with enough price variation
 and a trustworthy fit get a usable coefficient.
 
-- **Clearly elastic** (a price cut reliably lifts units) → **protect / extend the discount**.
+- **Clearly elastic** (|E| > 1) → vote the **profit-maximizing price** `P* = cost · E/(E+1)`
+  (the optimal markup over cost under constant-elasticity demand), grossed for VAT and clamped by
+  the guardrails. More-elastic SKUs move toward a price nearer cost (grow volume); barely-elastic
+  ones toward a higher markup (the anchor caps it).
 - **Inelastic, unit-elastic, or no trustworthy fit** → **stay silent** — left to the margin-tier
-  (#6) advisor and the margin-floor guardrail; we don't claw back discounts on thin evidence.
+  (#6) advisor and the margin-floor guardrail.
 
 ---
 
@@ -240,7 +243,7 @@ to cheap vs. expensive products, without changing any algorithm itself.
 |---|---|---|
 | Sell-through (velocity + inventory) | up if fast / selling out, down if slow | there's stock and some sales |
 | Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in **local** stock |
-| Price elasticity (fitted) | protect / extend discount | demand is provably elastic (weekly-fitted) |
+| Price elasticity (fitted) | to profit-max price `cost·E/(E+1)` | demand is provably elastic (weekly-fitted) |
 | Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
 | New-product protection (dormant) | up (full price) | freshly launched — *off until a launch-date signal exists* |
 

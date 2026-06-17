@@ -19,7 +19,7 @@ public static class AlgorithmCodes
     {
         (SellThrough, "Sell-through (velocity + inventory)", 75),
         (DeadStock, "Dead-stock progressive markdown", 75),
-        (Elasticity, "Price elasticity (fitted)", 50),
+        (Elasticity, "Price elasticity (fitted)", 80),
         (MarginTier, "Margin-tier prioritization", 40),
         (NewProduct, "New-product protection", 90),
     };

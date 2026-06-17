@@ -14,6 +14,7 @@ public static class ReasonCodeText
         ["VELOCITY_FORECAST"] = "Sell-through forecast",
         ["STOCK_AGING"] = "Stock aging without sales",
         ["STOCKOUT_RISK"] = "Sells out soon — discount unnecessary",
+        ["ELASTIC_OPTIMAL"] = "Elastic demand — moved to profit-max price",
         ["INELASTIC_DEMAND"] = "Discount didn't lift sales",
         ["ELASTIC_RESPONSE"] = "Sales respond to discount — protected",
         ["HIGH_MARGIN_ROOM"] = "High margin can absorb discount",

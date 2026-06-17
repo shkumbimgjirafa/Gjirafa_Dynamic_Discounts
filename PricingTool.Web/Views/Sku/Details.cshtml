@@ -46,7 +46,12 @@
             <span>Run <a asp-controller="Proposals" asp-action="Index" asp-route-runId="@item.Run.Id">#@item.Run.Id</a>
                 — @item.Run.StartedUtc.ToString("u")</span>
             <span>
-                @item.Proposal.CurrentPrice.ToString("0.00") → <strong>@item.Proposal.ProposedPriceValue.ToString("0.00") @cur</strong>
+                @item.Proposal.CurrentPrice.ToString("0.00")
+                @if (item.Proposal.RawWeightedPrice is decimal raw)
+                {
+                    <text>→ <span class="text-muted" title="Weighted blend of the algorithm votes, before guardrails and rounding">@raw.ToString("0.00")</span></text>
+                }
+                → <strong>@item.Proposal.ProposedPriceValue.ToString("0.00") @cur</strong>
                 (@item.Proposal.ChangePct.ToString("+0.##;-0.##;0")%)
                 <span class="badge @(item.Proposal.Status switch {
                     ProposalStatus.Approved => "bg-success", ProposalStatus.Rejected => "bg-danger",
