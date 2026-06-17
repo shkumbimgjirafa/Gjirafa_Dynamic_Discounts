@@ -86,6 +86,7 @@ public class SqlSourceDataReader : ISourceDataReader
                 GrossMargin = Dec(reader, "GrossMargin"),
                 LocalWarehouseStock = Int0(reader, "LocalWarehouseStock"),
                 SupplierWarehouseStock = Int0(reader, "Supplier_WarehouseStock"),
+                IsNewProduct = Int0(reader, "IsNewProduct") == 1,
                 Qty7 = Int0(reader, "7d_qty"),
                 Net7 = Dec0(reader, "7d_net"),
                 Qty14 = Int0(reader, "14d_qty"),

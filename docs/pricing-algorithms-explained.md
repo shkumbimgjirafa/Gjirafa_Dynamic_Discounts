@@ -1,6 +1,6 @@
 # How the Pricing Tool Decides a Price — In Plain Words
 
-This document explains, without any code, the *logic* behind each of the 5 pricing
+This document explains, without any code, the *logic* behind each of the 4 pricing
 algorithms and how they come together into one proposed price. It's written for anyone
 on the team — you don't need to be an engineer to follow it.
 
@@ -12,7 +12,7 @@ For every product (SKU), once per run, the tool does this:
 
 1. **Gathers the facts** — current price, full/shelf price, cost, stock on hand, and how
    many units sold over the last 7 / 14 / 30 / 60 / 90 days.
-2. **Asks 5 "advisors" (the algorithms)** what the price should be. Each one looks at the
+2. **Asks 4 "advisors" (the algorithms)** what the price should be. Each one looks at the
    facts from its own angle and either **votes** for a price or **stays silent** (says
    "no opinion").
 3. **Blends the votes** into one number — a *weighted average*, where louder, more-confident
@@ -50,12 +50,12 @@ last 7 days at 50%, the last 14 days at 30%, and the last 30 days at 20%.
 
 ---
 
-## The 5 algorithms
+## The 4 algorithms
 
 > Consolidated from the original 10: the velocity family (velocity-forecast + stockout-risk +
 > momentum) is now one **Sell-through** advisor; warehouse-stock-aging, supplier-vs-local and
-> discount-effectiveness were retired (covered by other advisors / the fitted elasticity / the
-> guardrails). Section numbers below are kept for reference.
+> discount-effectiveness were retired; new-product protection is no longer a voting algorithm — it's
+> now a hard guardrail (see below). Section numbers below are kept for reference.
 
 Each one is an independent advisor. It only speaks when its specific situation applies;
 otherwise it abstains. The **default weight** (0–100) is how much its vote counts before
@@ -85,12 +85,11 @@ is selling at all (that's dead-stock territory).
 
 ---
 
-### 2. New-product protection — *default weight 90*
-**The idea:** Don't discount brand-new launches. If a product launched within the last 90
-days, it votes for **full price (0% off)** with high confidence.
-
-**Note:** Today's data doesn't include a launch date, so this advisor currently stays silent.
-It will switch on once launch dates are available.
+### 2. ~~New-product protection~~ — *now a guardrail, not an algorithm*
+New-product protection moved from an (out-votable) algorithm to a **hard engine rule**: while a
+product is inside the platform's **MarkAsNew** window (`MarkAsNew = 1` and the current date is within
+its start/end dates), the engine holds the **current price exactly as-is — no discount, no change** —
+overriding every algorithm and guardrail. See the guardrails section.
 
 ---
 
@@ -190,7 +189,7 @@ products and be switched off for another.
 
 ## The guardrails (hard limits)
 
-After the averaging, three non-negotiable limits are applied:
+After the averaging, these non-negotiable limits are applied:
 
 1. **Margin floor** — the price can't drop below the level that still earns the band's
    minimum margin on cost. This is the *only* limit on how deep a discount can go.
@@ -202,6 +201,9 @@ After the averaging, three non-negotiable limits are applied:
    today's price. We don't give margin away on inventory we don't hold that isn't selling.
    (Raising the price back toward full is still allowed — only a net markdown is blocked.)
    This is enforced centrally, so it applies no matter which advisor proposed the discount.
+4. **New-product hold** — while a product is in the platform's **MarkAsNew** window, its price is
+   held exactly as-is (no discount, no change), overriding every algorithm. New launches are never
+   touched until their new-product window ends.
 
 > **Note:** There is **no discount ceiling**. Discounts may go as deep as the margin floor
 > allows — the floor is the sole brake on how low a price can land.
@@ -248,7 +250,6 @@ to cheap vs. expensive products, without changing any algorithm itself.
 | Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in **local** stock |
 | Price elasticity (fitted) | to profit-max price `cost·E/(E+1)` | demand is provably elastic (weekly-fitted) |
 | Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
-| New-product protection (dormant) | up (full price) | freshly launched — *off until a launch-date signal exists* |
 
 *All numeric thresholds above are the current defaults and can be tuned. Discounts are always
 measured against the full shelf price; margins are always computed after VAT is removed.*

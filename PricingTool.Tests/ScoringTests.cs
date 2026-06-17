@@ -116,6 +116,20 @@ public class PriceCalculatorTests
     }
 
     [Fact]
+    public void Decide_NewProduct_HoldsCurrentPrice_NoChange()
+    {
+        // Inside the platform MarkAsNew window: hold the current price (no discount), overriding votes.
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 79.99m, pptcv: 10m, band: band, isNewProduct: true);
+
+        var decision = NewCalculator().Decide(ctx, new[] { new FakeAlgorithm("A", new AlgorithmVote(50m, 1m, "R", "")) });
+
+        Assert.Equal(79.99m, decision.FinalPrice);
+        Assert.False(decision.Changed);
+        Assert.Contains("NEW_PRODUCT_PROTECTED", decision.ReasonCodes);
+    }
+
+    [Fact]
     public void Decide_DisabledAlgorithm_IsNeverEvaluated()
     {
         var band = BandWith(10, RoundingConvention.None, false, ("A", false, 50));

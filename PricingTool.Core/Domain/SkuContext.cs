@@ -42,6 +42,9 @@ public class SkuContext
     public int KsStock { get; init; }
     public int SupplierStock { get; init; }
 
+    /// <summary>True when inside the platform MarkAsNew window — the engine holds the current price (no discount, no change).</summary>
+    public bool IsNewProduct { get; init; }
+
     public int Qty7 { get; init; }
     public int Qty14 { get; init; }
     public int Qty30 { get; init; }

@@ -20,6 +20,8 @@ public class SnapshotRow
     /// <summary>Stock held in the warehouse local to this layer's store (was "KS" when single-layer).</summary>
     public int LocalWarehouseStock { get; init; }
     public int SupplierWarehouseStock { get; init; }
+    /// <summary>True when the product is inside its platform MarkAsNew window — hold price (no discount).</summary>
+    public bool IsNewProduct { get; init; }
 
     public int Qty7 { get; init; }
     public decimal Net7 { get; init; }

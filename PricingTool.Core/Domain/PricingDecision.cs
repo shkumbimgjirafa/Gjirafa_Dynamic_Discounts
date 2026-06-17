@@ -22,6 +22,8 @@ public static class GuardrailFlags
     public const string RoundingSkippedOutOfBounds = "ROUNDING_SKIPPED_OUT_OF_BOUNDS";
     /// <summary>Stock sits only in supplier warehouses and isn't selling — a proposed markdown was blocked; we don't discount stock we don't hold locally.</summary>
     public const string SupplierOnlyNoMarkdown = "SUPPLIER_ONLY_NO_MARKDOWN";
+    /// <summary>Inside the platform MarkAsNew window — price held as-is (no discount, no change).</summary>
+    public const string NewProductProtected = "NEW_PRODUCT_PROTECTED";
 }
 
 /// <summary>Reasons a SKU was excluded from pricing, recorded on a skipped proposal row.</summary>

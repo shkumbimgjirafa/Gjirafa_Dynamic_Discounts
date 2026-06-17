@@ -45,7 +45,11 @@ SELECT
     p.Id  AS ProductId,
     p.Sku,
     SUM(CASE WHEN w.IsLocalToStoreIds = @WarehouseStoreId THEN pwi.StockQuantity ELSE 0 END) AS LocalWarehouseStock,
-    SUM(CASE WHEN w.IsLocalToStores  = 0 THEN pwi.StockQuantity ELSE 0 END) AS Supplier_WarehouseStock
+    SUM(CASE WHEN w.IsLocalToStores  = 0 THEN pwi.StockQuantity ELSE 0 END) AS Supplier_WarehouseStock,
+    MAX(CASE WHEN p.MarkAsNew = 1
+             AND (p.MarkAsNewStartDateTimeUtc IS NULL OR @now >= p.MarkAsNewStartDateTimeUtc)
+             AND (p.MarkAsNewEndDateTimeUtc   IS NULL OR @now <= p.MarkAsNewEndDateTimeUtc)
+        THEN 1 ELSE 0 END) AS IsNewProduct
 INTO #stock
 FROM {opDb}.dbo.Product p
 INNER JOIN #vendors v ON v.Id = p.VendorId
@@ -135,6 +139,7 @@ SELECT
     pr.GrossMargin,
     st.LocalWarehouseStock,
     st.Supplier_WarehouseStock,
+    st.IsNewProduct,
     ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],
     ISNULL(s.[14d_qty], 0) AS [14d_qty],
     ISNULL(s.[30d_qty], 0) AS [30d_qty],

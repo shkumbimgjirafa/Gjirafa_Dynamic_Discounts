@@ -21,6 +21,25 @@ public class PriceCalculator
 
     public PricingDecision Decide(SkuContext ctx, IEnumerable<IPricingAlgorithm> algorithms)
     {
+        // New-product protection (hard rule): inside the platform MarkAsNew window the price is held
+        // exactly as-is — no discount, no change — overriding every algorithm and guardrail.
+        if (ctx.IsNewProduct)
+        {
+            return new PricingDecision
+            {
+                Sku = ctx.Sku,
+                AnchorPrice = ctx.AnchorPrice,
+                OldPrice = ctx.OldPrice,
+                CurrentPrice = ctx.CurrentPrice,
+                RawWeightedPrice = null,
+                ClampedPrice = null,
+                FinalPrice = ctx.CurrentPrice,
+                Changed = false,
+                GuardrailFlagsApplied = new[] { GuardrailFlags.NewProductProtected },
+                ReasonCodes = new[] { GuardrailFlags.NewProductProtected },
+            };
+        }
+
         var votes = new List<(IPricingAlgorithm, AlgorithmVote)>();
         foreach (var algorithm in algorithms)
         {

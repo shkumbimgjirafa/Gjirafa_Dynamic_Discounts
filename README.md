@@ -40,7 +40,7 @@ migration; activating/deactivating or retuning a layer is a data edit (no redepl
 
 | Project | Purpose |
 |---|---|
-| `PricingTool.Core` | Domain: the 5 pricing algorithms, weighted scoring, guardrails, VAT math, psychological rounding (incl. currency-aware), demo data generator |
+| `PricingTool.Core` | Domain: the 4 pricing algorithms, weighted scoring, guardrails (incl. new-product hold + supplier-only), VAT math, psychological rounding, demo data generator |
 | `PricingTool.Data` | EF Core (migrations, `PricingTool` schema), per-layer source dataset readers, run orchestrator, bulk writer, CSV push integration, audit |
 | `PricingTool.Engine` | Background worker — scheduled recalculation, looping active layers (schedule read per layer from DB, admin-editable live) |
 | `PricingTool.Web` | ASP.NET Core admin UI + impact dashboard, layer switcher (dev-shim auth, Analyst/Manager roles) |
@@ -126,7 +126,7 @@ operational database per layer (`{opDb}` token). Inline mode is the source of tr
 |---|---|---|
 | `VatRatePct` | `18.0` | Default/fallback VAT. The **effective rate is per layer** (`Layer.VatRatePct`: 18 for KS/MK, 20 for AL). Shelf prices are VAT-inclusive; costs (PPTCV) and net revenue are VAT-exclusive; all margin math reconciles through the layer's rate (`VatMath`). |
 | `StockoutRiskDays` | `14` | Algorithm 4 horizon: projected sellout within N days + healthy margin → vote discount off |
-| `NewProductProtectionDays` | `90` | Algorithm 2 window (inactive until a launch-date source exists — open decision) |
+| `NewProductProtectionDays` | `90` | Unused — new-product protection now uses the platform `MarkAsNew` window, not this config. |
 | `ChangeConfirmationThresholdPct` | `20.0` | Proposals beyond ±this % require explicit confirmation at approval (enforced server-side) |
 | `UseDemoData` | `true` | Replace the SQL source reader with the demo generator |
 | `SourceDataset:Mode` | `StoredProcedure` | `InlineQuery` runs the query verbatim — **required for Gjirafa50 layers** |
@@ -163,15 +163,15 @@ Selected per band (per layer), and always clamped inside the band guardrails:
 | `.99` / `.95` endings, whole number, 995-style (€5 steps) | EUR layers |
 | **…99 whole-currency** (e.g. 6149 → 6199, 9990 → 9999) | MKD / ALL layers — `.99`/`.95` are meaningless for currencies with no minor unit |
 
-### The 5 algorithms
+### The 4 algorithms
 
-`SELL_THROUGH`, `DEAD_STOCK`, `ELASTICITY`, `MARGIN_TIER`, `NEW_PRODUCT` — each an
-`IPricingAlgorithm` in `PricingTool.Core/Algorithms`, individually toggleable and weighted per
-band. Algorithms return `null` when they have no opinion; if nothing votes, the price stays
-unchanged. (Consolidated from the original 10: `SELL_THROUGH` merges the former velocity-forecast
-+ stockout-risk + momentum; `STOCK_AGING`, `SUPPLIER_LOCAL` and `DISCOUNT_EFFECTIVENESS` were
-retired — the last replaced by the fitted `ELASTICITY` + the margin floor; `NEW_PRODUCT` is
-dormant until a launch-date signal exists.)
+`SELL_THROUGH`, `DEAD_STOCK`, `ELASTICITY`, `MARGIN_TIER` — each an `IPricingAlgorithm` in
+`PricingTool.Core/Algorithms`, individually toggleable and weighted per band. Algorithms return
+`null` when they have no opinion; if nothing votes, the price stays unchanged. (Consolidated from
+the original 10: `SELL_THROUGH` merges velocity-forecast + stockout-risk + momentum; `STOCK_AGING`,
+`SUPPLIER_LOCAL` and `DISCOUNT_EFFECTIVENESS` were retired; `NEW_PRODUCT` is no longer an algorithm —
+new-product protection is now a hard engine rule from the platform MarkAsNew window, alongside the
+supplier-only-no-markdown guardrail.)
 
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
 history: consecutive daily snapshots with zero trailing-7d sales.

@@ -115,7 +115,6 @@ public static class DbSeeder
                     band.AlgorithmSettings.Add(new BandAlgorithmSetting
                     {
                         AlgorithmCode = code,
-                        // NEW_PRODUCT ships enabled but stays silent until launch dates exist (open decision #2).
                         Enabled = true,
                         Weight = defaultWeight,
                     });

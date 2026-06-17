@@ -102,52 +102,6 @@ public class SellThroughTests
     }
 }
 
-public class NewProductProtectionTests
-{
-    private readonly NewProductProtectionAlgorithm _algorithm = new();
-
-    [Fact]
-    public void WithinProtectionWindow_VotesFullPrice_HighConfidence()
-    {
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 85m,
-            launchDateUtc: new DateTime(2026, 5, 13, 0, 0, 0, DateTimeKind.Utc)); // 30 days old
-
-        var vote = _algorithm.Evaluate(ctx);
-
-        Assert.NotNull(vote);
-        Assert.Equal(100m, vote!.SuggestedPrice);   // Math.Max(anchor 100, current 85)
-        Assert.Equal(0.9m, vote.Confidence);
-        Assert.Equal("NEW_PRODUCT_PROTECTED", vote.ReasonCode);
-    }
-
-    [Fact]
-    public void AnchorBelowCurrent_DoesNotPropose_AMarkdown()
-    {
-        // "Protect full price" must never become a cut: anchor 80 < current 90 → vote stays at 90.
-        var ctx = TestData.Ctx(oldPrice: 120m, anchorPrice: 80m, currentPrice: 90m,
-            launchDateUtc: new DateTime(2026, 5, 13, 0, 0, 0, DateTimeKind.Utc));
-
-        var vote = _algorithm.Evaluate(ctx);
-
-        Assert.NotNull(vote);
-        Assert.Equal(90m, vote!.SuggestedPrice);
-    }
-
-    [Fact]
-    public void NullLaunchDate_StaysSilent_NoReliableSignalYet()
-    {
-        var ctx = TestData.Ctx(launchDateUtc: null);
-        Assert.Null(_algorithm.Evaluate(ctx));
-    }
-
-    [Fact]
-    public void OlderThanWindow_NoOpinion()
-    {
-        var ctx = TestData.Ctx(launchDateUtc: new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc)); // ~131 days
-        Assert.Null(_algorithm.Evaluate(ctx));
-    }
-}
-
 public class ElasticityTests
 {
     private readonly PriceElasticityHeuristicAlgorithm _algorithm = new();
@@ -329,7 +283,7 @@ public class ZeroVersusNullHandlingTests
 {
     public static IEnumerable<object[]> AllAlgorithms() => new IPricingAlgorithm[]
     {
-        new SellThroughAlgorithm(), new NewProductProtectionAlgorithm(),
+        new SellThroughAlgorithm(),
         new PriceElasticityHeuristicAlgorithm(), new MarginTierAlgorithm(),
         new DeadStockMarkdownAlgorithm(),
     }.Select(a => new object[] { a });

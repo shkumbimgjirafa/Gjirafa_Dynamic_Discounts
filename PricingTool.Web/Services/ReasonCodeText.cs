@@ -9,7 +9,7 @@ public static class ReasonCodeText
         ["SELL_THROUGH_FAST"] = "Fast sell-through — discount trimmed",
         ["SELL_THROUGH_HOLD"] = "Sell-through on pace — hold",
         ["SELL_THROUGH_SLOW"] = "Slow sell-through — deeper discount",
-        ["NEW_PRODUCT_PROTECTED"] = "New product — full price protected",
+        ["NEW_PRODUCT_PROTECTED"] = "New product (MarkAsNew window) — price held, no discount",
         // Legacy reason codes from the pre-consolidation roster (kept so old proposals still render):
         ["VELOCITY_FORECAST"] = "Sell-through forecast",
         ["STOCK_AGING"] = "Stock aging without sales",

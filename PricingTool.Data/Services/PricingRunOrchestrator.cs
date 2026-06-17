@@ -266,6 +266,7 @@ public class PricingRunOrchestrator
             Elasticity = elasticities.TryGetValue(row.Sku, out var elasticity) ? elasticity : null,
             KsStock = row.LocalWarehouseStock,
             SupplierStock = row.SupplierWarehouseStock,
+            IsNewProduct = row.IsNewProduct,
             Qty7 = row.Qty7, Net7 = row.Net7, Disc7 = row.Disc7,
             Qty14 = row.Qty14, Net14 = row.Net14, Disc14 = row.Disc14,
             Qty30 = row.Qty30, Net30 = row.Net30, Disc30 = row.Disc30,

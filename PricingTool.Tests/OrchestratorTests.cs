@@ -112,7 +112,7 @@ public class OrchestratorTests
     {
         var algorithms = new IPricingAlgorithm[]
         {
-            new SellThroughAlgorithm(), new NewProductProtectionAlgorithm(),
+            new SellThroughAlgorithm(),
             new PriceElasticityHeuristicAlgorithm(), new MarginTierAlgorithm(),
             new DeadStockMarkdownAlgorithm(),
         };

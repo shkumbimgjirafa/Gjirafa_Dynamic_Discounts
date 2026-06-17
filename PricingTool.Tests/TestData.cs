@@ -46,7 +46,8 @@ public static class TestData
         bool roundingDisabledForSku = false,
         decimal? anchorPrice = null,
         decimal? elasticity = null,
-        decimal vatRatePct = 18m)
+        decimal vatRatePct = 18m,
+        bool isNewProduct = false)
     {
         return new SkuContext
         {
@@ -68,6 +69,7 @@ public static class TestData
             Band = band ?? Band(),
             Options = options ?? new PricingEngineOptions(),
             VatRatePct = vatRatePct,
+            IsNewProduct = isNewProduct,
             RoundingDisabledForSku = roundingDisabledForSku,
         };
     }
