@@ -137,16 +137,17 @@ public class GuardrailService
 
     private static decimal MarginFloor(SkuContext ctx) =>
         ctx.Pptcv.HasValue
-            ? VatMath.MinGrossPriceForMargin(ctx.Pptcv.Value, ctx.Band.MarginFloorPct, ctx.VatRatePct)
+            ? VatMath.MinGrossPriceForMargin(ctx.Pptcv.Value, ctx.Band.MarginFloorPct)
             : 0m;
 
     /// <summary>
-    /// The dead-stock markdown floor: a fraction of unit cost (default 50%), VAT-grossed. The locally-held,
+    /// The dead-stock markdown floor: a fraction of the all-in unit cost (default 50%). The locally-held,
     /// non-selling tunnel markdown may run down to this even though it breaches the margin floor.
+    /// (Pptcv is already VAT-inclusive, so this is directly a selling price.)
     /// </summary>
     private static decimal DeadStockFloor(SkuContext ctx) =>
         ctx.Pptcv.HasValue
-            ? VatMath.GrossFromNet(ctx.Pptcv.Value * ctx.Options.DeadStockFloorCostFraction, ctx.VatRatePct)
+            ? ctx.Pptcv.Value * ctx.Options.DeadStockFloorCostFraction
             : 0m;
 
     /// <summary>

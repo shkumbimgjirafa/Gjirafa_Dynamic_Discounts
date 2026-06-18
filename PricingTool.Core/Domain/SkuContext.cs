@@ -11,7 +11,8 @@ namespace PricingTool.Core.Domain;
 ///  - AnchorPrice / OldPrice / CurrentPrice / all suggested prices: the LAYER'S display currency
 ///    (EUR/MKD/ALL), VAT-INCLUSIVE. All money for one SKU is in that single currency — the engine
 ///    never mixes currencies within a layer (FinalPrice, TierPrice, PPTCV and SR history all match).
-///  - Pptcv (unit cost) and NetN revenue: same layer currency, VAT-EXCLUSIVE.
+///  - Pptcv: the all-in landed unit cost (purchase + transport + customs + VAT), VAT-INCLUSIVE —
+///    same space as the prices, so margin = (price - Pptcv) / price. NetN revenue is VAT-EXCLUSIVE.
 ///  - Discount percentages are decimal fractions (0.39 = 39%).
 ///  - QtyN is 0 when there were no sales; DiscN is null when there were no sales. 0 and null mean different things.
 /// </summary>
@@ -116,7 +117,7 @@ public class SkuContext
         WeightedDailyVelocity > 0 ? KsStock / WeightedDailyVelocity : null;
 
     /// <summary>Margin percent at the current selling price computed from PPTCV (VAT reconciled). Null without cost.</summary>
-    public decimal? CurrentMarginPct => VatMath.MarginPct(CurrentPrice, Pptcv, VatRatePct);
+    public decimal? CurrentMarginPct => VatMath.MarginPct(CurrentPrice, Pptcv);
 
     /// <summary>Best available margin signal: source GrossMargin, falling back to the computed current margin.</summary>
     public decimal? EffectiveMarginPct => GrossMarginPct ?? CurrentMarginPct;

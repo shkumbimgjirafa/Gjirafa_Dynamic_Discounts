@@ -26,9 +26,11 @@ public class HomeController : Controller
     {
         var layerId = await _layers.RequireCurrentIdAsync();
         var model = new DashboardViewModel();
+        var vatK = 1m + await _db.Layers.Where(l => l.Id == layerId).Select(l => l.VatRatePct).FirstAsync() / 100m;
 
         // ---- Daily KPI trend from snapshots (7d trailing window normalized to per-day run rates).
-        // Margin reconciles VAT-exclusive net revenue against VAT-exclusive PPTCV cost.
+        // Margin = (gross revenue − all-in cost) / gross revenue. PPTCV is VAT-inclusive, so the
+        // VAT-exclusive net sales revenue is grossed up (× vatK) before comparing to cost.
         var kpiRows = await _db.DailySnapshots
             .Where(s => s.LayerId == layerId)
             .GroupBy(s => s.SnapshotDate)
@@ -43,11 +45,15 @@ public class HomeController : Controller
             .OrderBy(x => x.Date)
             .ToListAsync();
 
-        model.Trend = kpiRows.Select(x => new DailyKpi(
-            x.Date,
-            x.CostedNet7 > 0 ? Math.Round((x.CostedNet7 - x.Cost7) / x.CostedNet7 * 100m, 2) : 0,
-            Math.Round(x.Net7 / 7m, 2),
-            Math.Round(x.Qty7 / 7m, 1))).ToList();
+        model.Trend = kpiRows.Select(x =>
+        {
+            var grossCostedRev = x.CostedNet7 * vatK; // PPTCV is all-in (VAT-incl) → compare to gross revenue
+            return new DailyKpi(
+                x.Date,
+                grossCostedRev > 0 ? Math.Round((grossCostedRev - x.Cost7) / grossCostedRev * 100m, 2) : 0,
+                Math.Round(x.Net7 / 7m, 2),
+                Math.Round(x.Qty7 / 7m, 1));
+        }).ToList();
 
         // ---- Baseline (earliest 7 snapshot days = pre-tool period) vs the most recent 7.
         if (model.Trend.Count >= 2)

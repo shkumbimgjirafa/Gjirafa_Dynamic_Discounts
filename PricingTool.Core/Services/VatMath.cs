@@ -1,8 +1,15 @@
 namespace PricingTool.Core.Services;
 
 /// <summary>
-/// The single place where VAT-inclusive shelf prices and VAT-exclusive costs/revenue are reconciled.
-/// All margin math in the tool must go through here.
+/// VAT helpers + margin math.
+///
+/// IMPORTANT: <c>PPTCV</c> is the all-in, VAT-INCLUSIVE landed cost (purchase + transport + customs +
+/// VAT) — the same VAT-inclusive space as the selling prices. So margin is computed directly against
+/// the selling price: <c>(price − cost) / price</c>, exactly matching the source <c>GrossMargin</c>
+/// (<c>(FinalPrice − PPTCV) / FinalPrice</c>). There is NO VAT stripping in the cost/margin path.
+///
+/// <see cref="NetFromGross"/>/<see cref="GrossFromNet"/> remain only for converting VAT-exclusive sales
+/// REVENUE (e.g. order <c>PriceExclTax</c>) to a gross selling price — never for cost.
 /// </summary>
 public static class VatMath
 {
@@ -13,26 +20,24 @@ public static class VatMath
         netPrice * (1m + vatRatePct / 100m);
 
     /// <summary>
-    /// Margin percent of the VAT-exclusive selling price for a given VAT-inclusive shelf price
-    /// and VAT-exclusive unit cost. Null when cost is unknown — never assume zero cost.
+    /// Margin percent of the selling price: <c>(price − cost) / price</c>. Both the price and the
+    /// all-in cost are VAT-inclusive. Null when cost is unknown — never assume zero cost.
     /// </summary>
-    public static decimal? MarginPct(decimal grossPrice, decimal? unitCostNet, decimal vatRatePct)
+    public static decimal? MarginPct(decimal price, decimal? unitCost)
     {
-        if (unitCostNet is null) return null;
-        var net = NetFromGross(grossPrice, vatRatePct);
-        if (net <= 0) return null;
-        return (net - unitCostNet.Value) / net * 100m;
+        if (unitCost is null) return null;
+        if (price <= 0) return null;
+        return (price - unitCost.Value) / price * 100m;
     }
 
     /// <summary>
-    /// The lowest VAT-inclusive shelf price that still yields at least <paramref name="marginFloorPct"/>
-    /// margin on the net price, given a VAT-exclusive unit cost.
+    /// The lowest selling price that still yields at least <paramref name="marginFloorPct"/> margin on
+    /// the price, given the all-in unit cost: <c>cost / (1 − floor/100)</c>.
     /// </summary>
-    public static decimal MinGrossPriceForMargin(decimal unitCostNet, decimal marginFloorPct, decimal vatRatePct)
+    public static decimal MinGrossPriceForMargin(decimal unitCost, decimal marginFloorPct)
     {
         if (marginFloorPct >= 100m)
             throw new ArgumentOutOfRangeException(nameof(marginFloorPct), "Margin floor must be below 100%.");
-        var minNet = unitCostNet / (1m - marginFloorPct / 100m);
-        return GrossFromNet(minNet, vatRatePct);
+        return unitCost / (1m - marginFloorPct / 100m);
     }
 }

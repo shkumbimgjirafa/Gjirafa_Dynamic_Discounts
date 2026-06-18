@@ -24,8 +24,9 @@ public class SellThroughTests
     [Fact]
     public void ImminentSelloutThinMargin_ShavesInsteadOfRemoving()
     {
-        // Same fast sellout but thin margin → no remove; the fast branch shaves 5pp off the 15% discount.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 85m, pptcv: 70m, ksStock: 10,
+        // Same fast sellout but thin margin (cost 75 → (85-75)/85 = 11.8% < floor+5) → no remove;
+        // the fast branch shaves 5pp off the 15% discount.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 85m, pptcv: 75m, ksStock: 10,
             qty7: 14, qty14: 28, qty30: 60, qty90: 180);
 
         var vote = _algorithm.Evaluate(ctx);
@@ -82,7 +83,8 @@ public class SellThroughTests
     {
         // 10 local units selling 2/day = 5 days of OUR stock → shave, not markdown — even though the
         // supplier holds 10,000 (which on total stock would read as 5,000 days → deep markdown).
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 85m, pptcv: 70m,
+        // Cost 75 → 11.8% thin margin keeps it on the fast-shave branch, not remove.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 85m, pptcv: 75m,
             ksStock: 10, supplierStock: 10000, qty7: 14, qty14: 28, qty30: 60, qty90: 180);
 
         var vote = _algorithm.Evaluate(ctx);
@@ -109,26 +111,26 @@ public class ElasticityTests
     [Fact]
     public void ElasticCoefficient_VotesProfitMaxPrice()
     {
-        // E=-2 → markup E/(E+1)=2 over cost 40 = 80 net → 94.40 gross at 18% VAT.
+        // E=-2 → markup E/(E+1)=2 over the all-in cost 40 = 80.00 (cost is VAT-inclusive, so P* is a price).
         var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 75m, pptcv: 40m, elasticity: -2.0m);
 
         var vote = _algorithm.Evaluate(ctx);
 
         Assert.NotNull(vote);
-        Assert.Equal(94.40m, vote!.SuggestedPrice);
+        Assert.Equal(80.00m, vote!.SuggestedPrice);
         Assert.Equal("ELASTIC_OPTIMAL", vote.ReasonCode);
     }
 
     [Fact]
     public void HighlyElastic_VotesNearerCost_AMarkdown()
     {
-        // E=-5 → markup 1.25 over cost 40 = 50 net → 59.00 gross, below the 90 current → markdown.
+        // E=-5 → markup 1.25 over the all-in cost 40 = 50.00, below the 90 current → markdown.
         var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 90m, pptcv: 40m, elasticity: -5.0m);
 
         var vote = _algorithm.Evaluate(ctx);
 
         Assert.NotNull(vote);
-        Assert.Equal(59.00m, vote!.SuggestedPrice);
+        Assert.Equal(50.00m, vote!.SuggestedPrice);
         Assert.True(vote.SuggestedPrice < ctx.CurrentPrice);
     }
 

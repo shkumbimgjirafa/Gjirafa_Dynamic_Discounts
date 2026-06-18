@@ -8,10 +8,10 @@ namespace PricingTool.Core.Algorithms;
 /// from transaction history (<see cref="SkuContext.Elasticity"/>; the orchestrator injects only
 /// trustworthy, gate-passed values). It owns the ELASTIC lane only (|E| &gt; 1): for elastic demand
 /// it votes the profit-maximizing price under constant-elasticity demand,
-///   P* = cost · E/(E+1)   (net of VAT; the markup E/(E+1) is &gt; 1 for E &lt; -1, and shrinks toward
-///   1 — i.e. toward cost — the more elastic the SKU is),
-/// grossed into the VAT-inclusive shelf-price space. The guardrail then clamps it into
-/// [margin floor, anchor]. Inelastic, unit-elastic, unfitted, or cost-less SKUs → silent — those are
+///   P* = cost · E/(E+1)   (the markup E/(E+1) is &gt; 1 for E &lt; -1, and shrinks toward
+///   1 — i.e. toward cost — the more elastic the SKU is).
+/// Cost (PPTCV) is the all-in VAT-inclusive landed cost, so P* is already a selling price. The guardrail
+/// then clamps it into [margin floor, anchor]. Inelastic, unit-elastic, unfitted, or cost-less SKUs → silent — those are
 /// left to the margin-tier advisor and the margin-floor guardrail.
 /// </summary>
 public class PriceElasticityHeuristicAlgorithm : IPricingAlgorithm
@@ -29,7 +29,7 @@ public class PriceElasticityHeuristicAlgorithm : IPricingAlgorithm
         // a more-elastic SKU optimizes toward a price nearer cost (grow volume), a barely-elastic one
         // toward a high markup (the anchor cap then bounds it).
         var markup = e / (e + 1m);
-        var optimal = VatMath.GrossFromNet(cost * markup, ctx.VatRatePct);
+        var optimal = cost * markup;   // cost is the all-in VAT-inclusive PPTCV, so P* is already a shelf price
 
         var magnitude = Math.Abs(e);
         var confidence = Math.Min(0.75m, 0.45m + (magnitude - 1m) / 4m);

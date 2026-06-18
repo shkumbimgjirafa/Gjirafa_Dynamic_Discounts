@@ -3,8 +3,8 @@ namespace PricingTool.Core.Services;
 /// <summary>
 /// The profit &amp; margin impact of a run's proposed price changes over one trailing sales window,
 /// versus a naive do-nothing baseline: assume we keep selling the SAME units we sold in the window,
-/// at the CURRENT price ("now") vs the PROPOSED price. All money is VAT-net (the gross prices are
-/// divided down by the layer VAT rate); only SKUs with a known cost contribute.
+/// at the CURRENT price ("now") vs the PROPOSED price. Prices and cost (PPTCV) are both VAT-inclusive,
+/// so margin = (price − cost) / price; only SKUs with a known cost contribute.
 /// </summary>
 public readonly record struct WindowProfit(
     int WindowDays,
@@ -28,27 +28,22 @@ public readonly record struct WindowProfit(
 public static class KpiMath
 {
     /// <summary>
-    /// Build one window's profit/margin from three pre-summed terms over the cost-known SKUs:
-    /// Σ(currentGross·qty), Σ(proposedGross·qty), Σ(costNet·qty). Grossed prices are converted to net
-    /// once by the single layer VAT rate (revenue = Σgross·qty / (1 + vat/100)); profit = revenue − Σcost·qty.
-    /// Summing first, dividing by VAT once, keeps this identical whether the caller summed in memory
-    /// (Movers) or in SQL (Proposals).
+    /// Build one window's profit/margin from three pre-summed terms over the cost-known SKUs (all
+    /// VAT-inclusive): Σ(currentPrice·qty), Σ(proposedPrice·qty), Σ(cost·qty). Profit = revenue − cost;
+    /// revenue is the price·qty sum directly (no VAT conversion — PPTCV is already all-in). Identical
+    /// whether the caller summed in memory (Movers) or in SQL (Proposals).
     /// </summary>
     public static WindowProfit FromSums(
         int windowDays,
-        decimal sumCurrentGrossQty,
-        decimal sumProposedGrossQty,
-        decimal sumCostNetQty,
-        decimal vatRatePct)
+        decimal sumCurrentPriceQty,
+        decimal sumProposedPriceQty,
+        decimal sumCostQty)
     {
-        var k = 1m + vatRatePct / 100m;
-        var revenueNow = k > 0 ? sumCurrentGrossQty / k : 0m;
-        var revenueProposed = k > 0 ? sumProposedGrossQty / k : 0m;
         return new WindowProfit(
             windowDays,
-            revenueNow - sumCostNetQty,
-            revenueProposed - sumCostNetQty,
-            revenueNow,
-            revenueProposed);
+            sumCurrentPriceQty - sumCostQty,
+            sumProposedPriceQty - sumCostQty,
+            sumCurrentPriceQty,
+            sumProposedPriceQty);
     }
 }

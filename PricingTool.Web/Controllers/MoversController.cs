@@ -94,14 +94,14 @@ public class MoversController : Controller
 
         // KPI cards: profit/margin impact across the movers shown (dedup the two lists by SKU).
         var shown = model.TopSellers.Concat(model.DeadInStock).GroupBy(r => r.Sku).Select(g => g.First());
-        model.Kpis = BuildWindowKpis(shown, model.VatRatePct);
+        model.Kpis = BuildWindowKpis(shown);
 
         return View(model);
     }
 
-    /// <summary>Sum each window's (currentGross·qty, proposedGross·qty, costNet·qty) over cost-known rows,
-    /// then defer to <see cref="KpiMath.FromSums"/> (shared with the Proposals SQL aggregate).</summary>
-    private static List<WindowProfit> BuildWindowKpis(IEnumerable<MoverRow> rows, decimal vat)
+    /// <summary>Sum each window's (currentPrice·qty, proposedPrice·qty, cost·qty) over cost-known rows
+    /// (all VAT-inclusive), then defer to <see cref="KpiMath.FromSums"/> (shared with the Proposals SQL aggregate).</summary>
+    private static List<WindowProfit> BuildWindowKpis(IEnumerable<MoverRow> rows)
     {
         decimal c7 = 0, p7 = 0, k7 = 0, c30 = 0, p30 = 0, k30 = 0, c90 = 0, p90 = 0, k90 = 0;
         foreach (var r in rows)
@@ -113,9 +113,9 @@ public class MoversController : Controller
         }
         return new List<WindowProfit>
         {
-            KpiMath.FromSums(7, c7, p7, k7, vat),
-            KpiMath.FromSums(30, c30, p30, k30, vat),
-            KpiMath.FromSums(90, c90, p90, k90, vat),
+            KpiMath.FromSums(7, c7, p7, k7),
+            KpiMath.FromSums(30, c30, p30, k30),
+            KpiMath.FromSums(90, c90, p90, k90),
         };
     }
 }

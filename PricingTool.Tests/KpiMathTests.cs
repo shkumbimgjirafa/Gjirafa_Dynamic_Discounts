@@ -4,26 +4,27 @@ namespace PricingTool.Tests;
 
 public class KpiMathTests
 {
-    // One SKU: cost 10 (net), current 20, proposed 25 (gross), 5 units. VAT 18%.
-    // net rev now = 100/1.18 = 84.75 → profit 34.75; proposed = 125/1.18 = 105.93 → profit 55.93.
+    // One SKU: cost 50 (all-in), current 20×5=100, proposed 25×5=125 (VAT-inclusive, 5 units).
+    // profit now = 100−50 = 50; proposed = 125−50 = 75. Margins 50% → 60%.
     [Fact]
-    public void FromSums_ComputesVatNetProfitAndMargin()
+    public void FromSums_ComputesProfitAndMargin()
     {
-        var w = KpiMath.FromSums(7, sumCurrentGrossQty: 100m, sumProposedGrossQty: 125m, sumCostNetQty: 50m, vatRatePct: 18m);
+        var w = KpiMath.FromSums(7, sumCurrentPriceQty: 100m, sumProposedPriceQty: 125m, sumCostQty: 50m);
 
         Assert.Equal(7, w.WindowDays);
-        Assert.Equal(34.75m, Math.Round(w.ProfitNow, 2));
-        Assert.Equal(55.93m, Math.Round(w.ProfitProposed, 2));
-        Assert.Equal(21.19m, Math.Round(w.ProfitDelta, 2));
-        Assert.Equal(41.0m, Math.Round(w.MarginNowPct!.Value, 1));
-        Assert.Equal(52.8m, Math.Round(w.MarginProposedPct!.Value, 1));
-        Assert.Equal(11.8m, Math.Round(w.MarginDeltaPp!.Value, 1));
+        Assert.Equal(50m, w.ProfitNow);
+        Assert.Equal(75m, w.ProfitProposed);
+        Assert.Equal(25m, w.ProfitDelta);
+        Assert.Equal(50m, w.ProfitDeltaPct);                 // (75-50)/50
+        Assert.Equal(50m, Math.Round(w.MarginNowPct!.Value, 1));
+        Assert.Equal(60m, Math.Round(w.MarginProposedPct!.Value, 1));
+        Assert.Equal(10m, Math.Round(w.MarginDeltaPp!.Value, 1));
     }
 
     [Fact]
     public void FromSums_EmptyWindow_NoUnits_YieldsNullMargins()
     {
-        var w = KpiMath.FromSums(30, 0m, 0m, 0m, 18m);
+        var w = KpiMath.FromSums(30, 0m, 0m, 0m);
 
         Assert.Equal(0m, w.ProfitNow);
         Assert.Equal(0m, w.ProfitDelta);
@@ -34,11 +35,12 @@ public class KpiMathTests
     [Fact]
     public void FromSums_BaselineBelowCost_ProfitDeltaPctIsNull_ButDeltaStillComputed()
     {
-        // current 20 (below the 30 cost), proposed 35, 2 units → baseline profit is negative.
-        var w = KpiMath.FromSums(90, sumCurrentGrossQty: 40m, sumProposedGrossQty: 70m, sumCostNetQty: 60m, vatRatePct: 18m);
+        // current 40 (below the 60 cost), proposed 70 → baseline profit is negative.
+        var w = KpiMath.FromSums(90, sumCurrentPriceQty: 40m, sumProposedPriceQty: 70m, sumCostQty: 60m);
 
-        Assert.True(w.ProfitNow < 0);
-        Assert.True(w.ProfitDelta > 0);     // proposed recovers some loss
+        Assert.Equal(-20m, w.ProfitNow);
+        Assert.Equal(10m, w.ProfitProposed);
+        Assert.Equal(30m, w.ProfitDelta);
         Assert.Null(w.ProfitDeltaPct);      // % off a non-positive baseline is meaningless
     }
 }

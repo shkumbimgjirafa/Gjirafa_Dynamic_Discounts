@@ -143,17 +143,17 @@ public class PriceCalculatorTests
     [Fact]
     public void Decide_ClampsThenRounds_WithoutViolatingGuardrails()
     {
-        // Vote 60 → margin floor (cost 50, floor 20%, VAT 18%) forces 73.75 → .99 rounding
-        // must go UP to 73.99 (73.-something down candidate 72.99 would breach the floor).
+        // Vote 60 → margin floor (cost 50 all-in, floor 20%) forces 62.50 → .99 rounding
+        // must go UP to 62.99 (the down candidate 61.99 would breach the floor).
         var band = BandWith(20, RoundingConvention.EndsIn99, true, ("A", true, 100));
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, qty90: 12, band: band);
 
         var decision = NewCalculator().Decide(ctx, new[] { new FakeAlgorithm("A", new AlgorithmVote(60m, 1m, "R", "")) });
 
-        Assert.Equal(73.75m, decision.ClampedPrice);
-        Assert.Equal(73.99m, decision.FinalPrice);
+        Assert.Equal(62.50m, decision.ClampedPrice);
+        Assert.Equal(62.99m, decision.FinalPrice);
         Assert.Contains(GuardrailFlags.MarginFloorClamped, decision.GuardrailFlagsApplied);
-        var margin = VatMath.MarginPct(decision.FinalPrice, 50m, 18m)!.Value;
+        var margin = VatMath.MarginPct(decision.FinalPrice, 50m)!.Value;
         Assert.True(margin >= 20m);
     }
 

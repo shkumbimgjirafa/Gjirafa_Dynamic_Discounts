@@ -90,8 +90,6 @@ public class ProposalsController : Controller
             .MaxAsync(s => (DateTime?)s.SnapshotDate);
         if (snapDate is null) return new();
 
-        var vat = await _db.Layers.Where(l => l.Id == layerId).Select(l => l.VatRatePct).FirstAsync();
-
         var costed =
             from p in BuildFilteredQuery(filter)
             where p.Pptcv != null
@@ -109,9 +107,9 @@ public class ProposalsController : Controller
         if (agg is null) return new();
         return new List<WindowProfit>
         {
-            KpiMath.FromSums(7, agg.C7, agg.P7, agg.K7, vat),
-            KpiMath.FromSums(30, agg.C30, agg.P30, agg.K30, vat),
-            KpiMath.FromSums(90, agg.C90, agg.P90, agg.K90, vat),
+            KpiMath.FromSums(7, agg.C7, agg.P7, agg.K7),
+            KpiMath.FromSums(30, agg.C30, agg.P30, agg.K30),
+            KpiMath.FromSums(90, agg.C90, agg.P90, agg.K90),
         };
     }
 

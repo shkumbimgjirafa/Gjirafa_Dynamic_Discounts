@@ -10,13 +10,13 @@ public class GuardrailTests
     [Fact]
     public void Clamp_RaisesToMarginFloor()
     {
-        // cost 50 net, floor 20% → min net 62.5 → min gross 73.75 at 18% VAT.
+        // cost 50 (all-in, VAT-incl), floor 20% → floor = 50 / (1 - 0.20) = 62.50.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
 
         var result = _guardrails.Clamp(ctx, 60m);
 
-        Assert.Equal(73.75m, result.Price);
+        Assert.Equal(62.50m, result.Price);
         Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
     }
 
@@ -58,29 +58,29 @@ public class GuardrailTests
     [Fact]
     public void Clamp_MarginFloorAboveOldPrice_HoldsFloorAndFlags()
     {
-        // cost 90 net, floor 20% → min gross 132.75 > OldPrice 100. Margin wins; humans alerted.
+        // cost 90 (all-in), floor 20% → floor = 90 / 0.80 = 112.50 > OldPrice 100. Margin wins; humans alerted.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 95m, pptcv: 90m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
 
         var result = _guardrails.Clamp(ctx, 95m);
 
-        Assert.Equal(132.75m, result.Price);
+        Assert.Equal(112.50m, result.Price);
         Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
         Assert.Contains(GuardrailFlags.MarginFloorAboveAnchor, result.Flags);
     }
 
     [Fact]
-    public void Clamp_MarginFloorComputedWithVat_NotOnGrossPrice()
+    public void Clamp_MarginFloor_IsAllInCostOverFloor_NoVat()
     {
-        // If VAT were ignored, floor price for cost=50 / floor=20% would be 62.50.
-        // Correct VAT-aware floor is 73.75 — verify we get the VAT-aware one.
+        // PPTCV is the all-in (VAT-incl) cost → floor = 50 / (1 - 0.20) = 62.50, no VAT in the cost path.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m, qty90: 12,
             band: TestData.Band(marginFloorPct: 20m));
 
-        var result = _guardrails.Clamp(ctx, 63m);
+        var result = _guardrails.Clamp(ctx, 60m);
 
-        Assert.Equal(73.75m, result.Price);
-        var margin = VatMath.MarginPct(result.Price, 50m, 18m);
+        Assert.Equal(62.50m, result.Price);
+        Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
+        var margin = VatMath.MarginPct(result.Price, 50m);
         Assert.True(margin >= 20m - 0.0001m);
     }
 
@@ -91,9 +91,9 @@ public class GuardrailTests
             band: TestData.Band(marginFloorPct: 20m));
         var bounds = _guardrails.GetBounds(ctx);
 
-        // No discount ceiling: the only lower bound is the margin floor (cost 50, floor 20%,
-        // VAT 18% → 73.75). Upper bound is the shelf price.
-        Assert.Equal(73.75m, bounds.Lower);
+        // No discount ceiling: the only lower bound is the margin floor (cost 50 all-in, floor 20%
+        // → 50 / 0.80 = 62.50). Upper bound is the shelf price.
+        Assert.Equal(62.50m, bounds.Lower);
         Assert.Equal(100m, bounds.Upper);
     }
 
@@ -184,13 +184,13 @@ public class GuardrailTests
     [Fact]
     public void Clamp_LocalDeadStock_StopsAtCostFractionFloor()
     {
-        // A very deep dead-stock vote can't go below 50% of cost: 0.50 × 50 = 25 net → 29.50 gross.
+        // A very deep dead-stock vote can't go below 50% of the all-in cost: 0.50 × 50 = 25.00.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
             ksStock: 50, supplierStock: 0, qty90: 0, band: TestData.Band(marginFloorPct: 20m));
 
         var result = _guardrails.Clamp(ctx, 5m);
 
-        Assert.Equal(29.50m, result.Price);
+        Assert.Equal(25.00m, result.Price);
         Assert.Contains(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
     }
 
@@ -218,7 +218,7 @@ public class GuardrailTests
 
         var result = _guardrails.Clamp(ctx, 60m);
 
-        Assert.Equal(73.75m, result.Price);
+        Assert.Equal(62.50m, result.Price);
         Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
         Assert.DoesNotContain(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
     }
@@ -231,7 +231,7 @@ public class GuardrailTests
 
         var bounds = _guardrails.GetBounds(ctx);
 
-        Assert.Equal(29.50m, bounds.Lower);   // 50% of cost, grossed — below the 73.75 margin floor
+        Assert.Equal(25.00m, bounds.Lower);   // 50% of the all-in cost — below the 62.50 margin floor
         Assert.Equal(100m, bounds.Upper);
     }
 
