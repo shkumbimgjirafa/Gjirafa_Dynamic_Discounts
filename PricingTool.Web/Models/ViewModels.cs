@@ -122,17 +122,6 @@ public class AuditViewModel
 
 // ---------------------------------------------------------------- SKU drill-down
 
-public class SkuHistoryPoint
-{
-    public DateTime Date { get; set; }
-    public decimal? CurrentPrice { get; set; }
-    public decimal? OldPrice { get; set; }
-    public decimal? AnchorPrice { get; set; }
-    public int Qty7 { get; set; }
-    public int KsStock { get; set; }
-    public int SupplierStock { get; set; }
-}
-
 public class SkuProposalHistory
 {
     public PricingRun Run { get; set; } = null!;
@@ -142,7 +131,6 @@ public class SkuProposalHistory
 public class SkuDetailsViewModel
 {
     public string Sku { get; set; } = "";
-    public List<SkuHistoryPoint> History { get; set; } = new();
     public List<SkuProposalHistory> Proposals { get; set; } = new();
     public DailySnapshot? Latest { get; set; }
 }

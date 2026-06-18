@@ -1,13 +1,7 @@
 @model SkuDetailsViewModel
-@using System.Text.Json
 @{
     ViewData["Title"] = $"SKU {Model.Sku}";
     var cur = ViewData.CurrencyCode();
-    var labels = JsonSerializer.Serialize(Model.History.Select(h => h.Date.ToString("MM-dd")));
-    var prices = JsonSerializer.Serialize(Model.History.Select(h => h.CurrentPrice));
-    var oldPrices = JsonSerializer.Serialize(Model.History.Select(h => h.OldPrice));
-    var anchorPrices = JsonSerializer.Serialize(Model.History.Select(h => h.AnchorPrice));
-    var qty = JsonSerializer.Serialize(Model.History.Select(h => h.Qty7));
 }
 
 @{
@@ -41,11 +35,12 @@
 }
 
 <div class="row g-3 mb-4">
-    <div class="col-lg-7"><div class="card"><div class="card-body">
-        <h6>Price history (snapshots)</h6><canvas id="priceChart" height="190"></canvas>
-    </div></div></div>
-    <div class="col-lg-5"><div class="card"><div class="card-body">
-        <h6>7d trailing units sold — sales response after changes</h6><canvas id="qtyChart" height="190"></canvas>
+    <div class="col-12"><div class="card"><div class="card-body">
+        <h6>Net sales — monthly
+            <small class="text-muted">— net revenue (VAT-excl) per month, last 24 months</small>
+        </h6>
+        <div id="nsStatus" class="text-muted small mb-1">Loading…</div>
+        <canvas id="netSalesChart" height="120"></canvas>
     </div></div></div>
 </div>
 
@@ -125,51 +120,66 @@
 
 @section Scripts {
 <script>
-    const labels = @Html.Raw(labels);
-    new Chart(document.getElementById('priceChart'), {
-        type: 'line',
-        data: { labels, datasets: [
-            { label: 'Current @cur', data: @Html.Raw(prices), borderColor: '#0d6efd', tension: .2, pointRadius: 0 },
-            { label: 'Anchor (FinalPrice) @cur', data: @Html.Raw(anchorPrices), borderColor: '#198754', borderDash: [3, 3], tension: .2, pointRadius: 0 },
-            { label: 'Old (shelf) @cur', data: @Html.Raw(oldPrices), borderColor: '#adb5bd', borderDash: [6, 4], tension: .2, pointRadius: 0 }
-        ]},
-        options: { scales: { x: { ticks: { maxTicksLimit: 12 } } } }
-    });
-    new Chart(document.getElementById('qtyChart'), {
-        type: 'bar',
-        data: { labels, datasets: [{ label: 'Units (7d trailing)', data: @Html.Raw(qty), backgroundColor: '#fd7e1488' }] },
-        options: { scales: { x: { ticks: { maxTicksLimit: 12 } } } }
-    });
-
-    // Price → gross profit scatter — fetched on demand (nothing stored); the page is already rendered.
-    fetch('@Url.Action("PriceProfitData", "Sku", new { id = Model.Sku })')
+    // Both SKU-details charts are built from one on-demand source query (nothing stored); the page is
+    // already rendered, so this fills the charts asynchronously.
+    fetch('@Url.Action("SalesHistoryData", "Sku", new { id = Model.Sku })')
         .then(r => r.json())
         .then(d => {
-            const status = document.getElementById('ppStatus');
-            if (!d.points || d.points.length === 0) { status.textContent = d.message || 'No sales history to plot.'; return; }
-            status.textContent = '';
-            const data = d.points.map(p => ({ x: p.x, y: p.y, r: Math.min(20, 4 + Math.sqrt(p.units)) }));
-            const datasets = [{ label: 'Weekly price → profit', data, backgroundColor: '#0d6efd55', borderColor: '#0d6efd' }];
-            if (d.currentPrice) {
-                const ys = d.points.map(p => p.y).concat(0);
-                datasets.push({ type: 'line', label: 'Current price', borderColor: '#dc3545', borderDash: [4, 4], pointRadius: 0, fill: false,
-                    data: [{ x: d.currentPrice, y: Math.min(...ys) }, { x: d.currentPrice, y: Math.max(...ys) }] });
-            }
-            new Chart(document.getElementById('priceProfitChart'), {
-                type: 'bubble',
-                data: { datasets },
-                options: {
-                    plugins: { tooltip: { callbacks: {
-                        label: function (c) {
-                            return '@cur ' + c.parsed.x + ' → ' + c.parsed.y + (c.raw.units ? ' (' + c.raw.units + ' u)' : '');
-                        } } } },
-                    scales: {
-                        x: { title: { display: true, text: 'Unit price (@cur)' } },
-                        y: { title: { display: true, text: 'Gross profit (@cur, VAT-net)' } }
+            // Historic monthly net sales (VAT-excl revenue).
+            const ns = d.monthlyNetSales || [];
+            const nsStatus = document.getElementById('nsStatus');
+            if (ns.length === 0) {
+                nsStatus.textContent = d.monthlyMessage || 'No sales history.';
+            } else {
+                nsStatus.textContent = '';
+                new Chart(document.getElementById('netSalesChart'), {
+                    type: 'bar',
+                    data: { labels: ns.map(m => m.label),
+                        datasets: [{ label: 'Net sales @cur', data: ns.map(m => m.netSales), backgroundColor: '#19875488' }] },
+                    options: {
+                        plugins: { tooltip: { callbacks: {
+                            label: function (c) {
+                                const u = ns[c.dataIndex] ? ns[c.dataIndex].units : 0;
+                                return '@cur ' + c.parsed.y + (u ? ' (' + u + ' u)' : '');
+                            } } } },
+                        scales: { x: { ticks: { maxTicksLimit: 12 } }, y: { beginAtZero: true } }
                     }
+                });
+            }
+
+            // Price → gross profit scatter.
+            const pts = d.pricePoints || [];
+            const ppStatus = document.getElementById('ppStatus');
+            if (pts.length === 0) {
+                ppStatus.textContent = d.priceMessage || 'No sales history to plot.';
+            } else {
+                ppStatus.textContent = '';
+                const data = pts.map(p => ({ x: p.x, y: p.y, r: Math.min(20, 4 + Math.sqrt(p.units)) }));
+                const datasets = [{ label: 'Weekly price → profit', data, backgroundColor: '#0d6efd55', borderColor: '#0d6efd' }];
+                if (d.currentPrice) {
+                    const ys = pts.map(p => p.y).concat(0);
+                    datasets.push({ type: 'line', label: 'Current price', borderColor: '#dc3545', borderDash: [4, 4], pointRadius: 0, fill: false,
+                        data: [{ x: d.currentPrice, y: Math.min(...ys) }, { x: d.currentPrice, y: Math.max(...ys) }] });
                 }
-            });
+                new Chart(document.getElementById('priceProfitChart'), {
+                    type: 'bubble',
+                    data: { datasets },
+                    options: {
+                        plugins: { tooltip: { callbacks: {
+                            label: function (c) {
+                                return '@cur ' + c.parsed.x + ' → ' + c.parsed.y + (c.raw.units ? ' (' + c.raw.units + ' u)' : '');
+                            } } } },
+                        scales: {
+                            x: { title: { display: true, text: 'Unit price (@cur)' } },
+                            y: { title: { display: true, text: 'Gross profit (@cur, VAT-net)' } }
+                        }
+                    }
+                });
+            }
         })
-        .catch(() => { document.getElementById('ppStatus').textContent = 'Could not load sales history.'; });
+        .catch(() => {
+            document.getElementById('nsStatus').textContent = 'Could not load sales history.';
+            document.getElementById('ppStatus').textContent = 'Could not load sales history.';
+        });
 </script>
 }

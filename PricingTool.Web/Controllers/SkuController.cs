@@ -17,16 +17,16 @@ public class SkuController : Controller
 {
     private readonly PricingToolDbContext _db;
     private readonly CurrentLayerService _layers;
-    private readonly ISkuElasticityPointsReader _points;
+    private readonly ISkuSalesHistoryReader _sales;
     private readonly ILogger<SkuController> _logger;
 
     public SkuController(
         PricingToolDbContext db, CurrentLayerService layers,
-        ISkuElasticityPointsReader points, ILogger<SkuController> logger)
+        ISkuSalesHistoryReader sales, ILogger<SkuController> logger)
     {
         _db = db;
         _layers = layers;
-        _points = points;
+        _sales = sales;
         _logger = logger;
     }
 
@@ -55,16 +55,6 @@ public class SkuController : Controller
         {
             Sku = sku,
             Latest = snapshots.LastOrDefault(),
-            History = snapshots.Select(s => new SkuHistoryPoint
-            {
-                Date = s.SnapshotDate,
-                CurrentPrice = s.CurrentPrice,
-                OldPrice = s.OldPrice,
-                AnchorPrice = s.AnchorPrice,
-                Qty7 = s.Qty7,
-                KsStock = s.LocalWarehouseStock,
-                SupplierStock = s.SupplierWarehouseStock,
-            }).ToList(),
             Proposals = proposals.Select(p => new SkuProposalHistory
             {
                 Run = p.PricingRun,
@@ -75,19 +65,23 @@ public class SkuController : Controller
     }
 
     /// <summary>
-    /// On-demand data for the price→gross-profit scatter: the SKU's weekly sales buckets (from the live
-    /// SR_ProductsData source, same window/scope as the elasticity fit), with Y = VAT-net profit at today's
-    /// all-in cost — ((unit price − PPTCV)/(1+VAT)) × units. Computed only on page open; nothing is stored.
-    /// Always returns JSON (never 500s the page): empty points + a message when there's no history/cost.
+    /// On-demand sales history for the SKU details charts, queried live from the SR_ProductsData source
+    /// (same window/scope as the elasticity fit) and never stored:
+    ///  • <c>pricePoints</c> — weekly buckets for the price→gross-profit scatter, Y = VAT-net profit at
+    ///    today's all-in cost: ((unit price − PPTCV)/(1+VAT)) × units. Needs PPTCV; empty without it.
+    ///  • <c>monthlyNetSales</c> — monthly totals of net sales (VAT-exclusive NetoPrice) + units. No cost
+    ///    needed, so it still renders when PPTCV is missing.
+    /// Always returns JSON (never 500s the page): per-chart messages cover no-history / no-cost / error.
     /// </summary>
-    public async Task<IActionResult> PriceProfitData(string id)
+    public async Task<IActionResult> SalesHistoryData(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
         var sku = id.Trim();
         var layerId = await _layers.RequireCurrentIdAsync();
 
         var layer = await _db.Layers.AsNoTracking().FirstOrDefaultAsync(l => l.Id == layerId);
-        if (layer is null) return Json(new { points = Array.Empty<object>(), message = "No layer selected." });
+        if (layer is null)
+            return Json(new { pricePoints = Array.Empty<object>(), monthlyNetSales = Array.Empty<object>(), priceMessage = "No layer selected.", monthlyMessage = "No layer selected." });
 
         // Current all-in cost + price from the SKU's latest snapshot (Pptcv = the per-country PPTCV).
         var snap = await _db.DailySnapshots.AsNoTracking()
@@ -96,33 +90,53 @@ public class SkuController : Controller
             .Select(s => new { s.Pptcv, s.CurrentPrice })
             .FirstOrDefaultAsync();
 
-        if (snap?.Pptcv is not decimal cost)
-            return Json(new { points = Array.Empty<object>(), message = "No cost (PPTCV) for this SKU — can't compute profit." });
-
         IReadOnlyList<SkuPriceBucket> buckets;
+        IReadOnlyList<SkuMonthlyNetSales> months;
         try
         {
-            buckets = await _points.GetWeeklyBucketsAsync(layer.SrPlatformId, layer.SrCompanyId, sku, windowDays: 365);
+            buckets = await _sales.GetWeeklyBucketsAsync(layer.SrPlatformId, layer.SrCompanyId, sku, windowDays: 365);
+            months = await _sales.GetMonthlyNetSalesAsync(layer.SrPlatformId, layer.SrCompanyId, sku, monthsBack: 24);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Price/profit points query failed for SKU {Sku}.", sku);
-            return Json(new { points = Array.Empty<object>(), message = "Sales history is unavailable right now." });
+            _logger.LogWarning(ex, "Sales history query failed for SKU {Sku}.", sku);
+            return Json(new { pricePoints = Array.Empty<object>(), monthlyNetSales = Array.Empty<object>(), priceMessage = "Sales history is unavailable right now.", monthlyMessage = "Sales history is unavailable right now." });
         }
 
-        var vat = layer.VatRatePct;
-        var points = buckets.Select(b => new
+        // Scatter: VAT-net profit per weekly bucket at today's all-in cost (only when PPTCV is known).
+        object[] pricePoints;
+        string? priceMessage;
+        if (snap?.Pptcv is decimal cost)
         {
-            x = b.UnitPrice,
-            y = Math.Round(VatMath.NetFromGross(b.UnitPrice - cost, vat) * b.Units, 2),
-            units = b.Units,
-        }).ToList();
+            var vat = layer.VatRatePct;
+            pricePoints = buckets.Select(b => (object)new
+            {
+                x = b.UnitPrice,
+                y = Math.Round(VatMath.NetFromGross(b.UnitPrice - cost, vat) * b.Units, 2),
+                units = b.Units,
+            }).ToArray();
+            priceMessage = pricePoints.Length == 0 ? "No sales history to plot." : null;
+        }
+        else
+        {
+            pricePoints = Array.Empty<object>();
+            priceMessage = "No cost (PPTCV) for this SKU — can't compute profit.";
+        }
+
+        var monthlyNetSales = months.Select(m => new
+        {
+            label = $"{m.Year:0000}-{m.Month:00}",
+            netSales = Math.Round(m.NetSales, 2),
+            units = m.Units,
+        }).ToArray();
 
         return Json(new
         {
-            points,
-            currentPrice = snap.CurrentPrice,
-            message = points.Count == 0 ? "No sales history to plot." : null,
+            pricePoints,
+            currentPrice = snap?.CurrentPrice,
+            priceMessage,
+            monthlyNetSales,
+            monthlyMessage = monthlyNetSales.Length == 0 ? "No sales history." : null,
         });
     }
 }
