@@ -21,6 +21,13 @@ public class PricingEngineOptions
     public decimal ChangeConfirmationThresholdPct { get; set; } = 20m;
 
     /// <summary>
+    /// Below this price (in the layer's currency), the EUR .99 charm grid tightens from €1 steps to a
+    /// finer 10-cent .x9 grid (…0.99, 1.09, 1.19) so rounding a cheap item can't swing its margin
+    /// between, say, 0.99 and 1.99. Applies to the EndsIn99 convention; ties go to the lower price.
+    /// </summary>
+    public decimal LowPriceRoundingThreshold { get; set; } = 5m;
+
+    /// <summary>
     /// Dead-stock "tunnel" floor as a fraction of unit cost (0.50 = 50% of cost — a negative margin).
     /// Locally-held stock with no sales in 90 days is the ONE case allowed to pierce the margin floor:
     /// its progressive markdown may run down to this fraction of cost to clear inventory we hold. Set to

@@ -74,7 +74,7 @@ public class PriceCalculator
         decimal final;
         if (ctx.Band.RoundingEnabled && !ctx.RoundingDisabledForSku)
         {
-            var outcome = _rounding.Apply(clamp.Price, ctx.Band.Rounding, bounds);
+            var outcome = _rounding.Apply(clamp.Price, ctx.Band.Rounding, bounds, ctx.Options.LowPriceRoundingThreshold);
             if (outcome.SkippedOutOfBounds) flags.Add(GuardrailFlags.RoundingSkippedOutOfBounds);
             final = RoundingService.Normalize(outcome.Price, bounds);
         }

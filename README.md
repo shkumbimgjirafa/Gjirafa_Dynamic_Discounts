@@ -165,6 +165,9 @@ Selected per band (per layer), and always clamped inside the band guardrails:
 | `.99` / `.95` endings, whole number, 995-style (€5 steps) | EUR layers |
 | **…99 whole-currency** (e.g. 6149 → 6199, 9990 → 9999) | MKD / ALL layers — `.99`/`.95` are meaningless for currencies with no minor unit |
 
+Under €5 the `.99` grid tightens to a 10-cent `.x9` grid (…0.99, 1.09, 1.19) so cheap items don't
+swing between 0.99 and 1.99 and distort margin (threshold: `PricingEngine:LowPriceRoundingThreshold`).
+
 ### The 4 algorithms
 
 `SELL_THROUGH`, `DEAD_STOCK`, `ELASTICITY`, `MARGIN_TIER` — each an `IPricingAlgorithm` in

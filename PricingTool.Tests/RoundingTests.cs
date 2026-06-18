@@ -19,6 +19,34 @@ public class RoundingTests
         Assert.True(result.RoundingApplied);
     }
 
+    [Theory]
+    [InlineData(1.21, 1.19)]  // under €5: 10-cent .x9 grid → 1.19 / 1.29, closer 1.19
+    [InlineData(2.60, 2.59)]
+    [InlineData(4.30, 4.29)]
+    [InlineData(0.74, 0.69)]  // tie 0.69 / 0.79 → lower wins
+    public void EndsIn99_LowPrice_UsesDimeCharmGrid(decimal input, decimal expected)
+    {
+        var result = _rounding.Apply(input, RoundingConvention.EndsIn99, Wide);
+        Assert.Equal(expected, result.Price);
+        Assert.True(result.RoundingApplied);
+    }
+
+    [Fact]
+    public void EndsIn99_AtOrAboveThreshold_KeepsEuroGrid()
+    {
+        // 7.30 ≥ €5 → euro .99 grid: 6.99 / 7.99, closer 6.99 (not the dime-grid 7.29).
+        var result = _rounding.Apply(7.30m, RoundingConvention.EndsIn99, Wide);
+        Assert.Equal(6.99m, result.Price);
+    }
+
+    [Fact]
+    public void EndsIn99_LowPriceThreshold_IsConfigurable()
+    {
+        // Threshold 0 disables the dime grid → 1.21 falls back to the coarse euro grid (0.99).
+        var result = _rounding.Apply(1.21m, RoundingConvention.EndsIn99, Wide, lowPriceThreshold: 0m);
+        Assert.Equal(0.99m, result.Price);
+    }
+
     [Fact]
     public void EndsIn99_RoundsUp_WhenDownwardCandidateBreachesLowerBound()
     {

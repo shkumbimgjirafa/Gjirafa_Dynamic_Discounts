@@ -236,6 +236,11 @@ Finally, the price is snapped to a tidy, psychological value — depending on th
 setting this might be `.99` or `.95` endings, a whole number, "995-style" steps, or (for
 currencies with no minor unit like MKD and ALL) whole-currency `…99` endings.
 
+For cheap items the `.99` grid is too coarse — `0.99` vs `1.99` is a huge relative swing that
+distorts margin — so **under €5 it tightens to a 10-cent `.x9` grid** (…0.99, 1.09, 1.19, 1.29),
+keeping the charm look while the rounding step stays small relative to the price (a €1.21 input
+lands on `1.19`). Ties go to the lower price; the €5 threshold is configurable.
+
 Rounding is only applied if the rounded price **still respects the guardrails**. If rounding
 would push the price out of bounds, it's skipped and the exact guarded price is kept.
 
