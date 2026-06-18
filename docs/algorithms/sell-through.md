@@ -81,9 +81,13 @@ Starting from the **current** discount, it adjusts by how many days of local sto
 | ≤ 180 (3–6 months) | Very slow — deeper | **+6pp** |
 | > 180 (6+ months) | Overstocked — markdown pressure | **+10pp** |
 
-### Step 4 — The trend modifier (only if ≥ 5 units sold in 90d)
+### Step 4 — The trend modifier (only with a real baseline: ≥ 5 units sold *before* the last 7 days)
 
-It compares the 7-day velocity to the 90-day velocity (`accel = V7 / V90`):
+It compares the 7-day velocity to the 90-day velocity (`accel = V7 / V90`). It runs **only when there
+were at least 5 units sold in days 8–90** (`Qty90 − Qty7 ≥ 5`) — a genuine baseline to compare against.
+This matters because `V90 = Qty90/90` assumes the SKU was sellable for the whole window: a freshly-stocked
+item whose sales are all in the last week (`Qty7 == Qty90`) would otherwise show `accel = 90/7 ≈ 12.9`
+*mechanically* and be falsely flagged "accelerating." Without a baseline, only the level curve applies.
 
 - **Accelerating** (`accel ≥ 1.5`) → demand is picking up → temper the discount **−3pp** (don't give
   away margin on something gaining momentum).
@@ -223,7 +227,9 @@ The examples below show the whole chain honestly.
 - **"Healthy margin" (remove branch) uses the *source* margin; the margin *floor* uses *cost*.** When
   those two disagree (Example B), the cost-based floor wins and the SKU is flagged for a human.
 - **Supplier stock never counts** — only locally-held stock drives days-to-sellout.
-- **The trend modifier needs evidence** (≥ 5 units in 90d); below that, only the level curve applies.
+- **The trend modifier needs a baseline** (≥ 5 units sold *before* the last 7 days, `Qty90 − Qty7 ≥ 5`);
+  otherwise — including a freshly-stocked one-week burst — only the level curve applies, so a recent
+  burst can't be misread as "accelerating."
 - **Below-floor selling prices can be frozen by a different rule.** A locally-stocked item whose
   *current* price is already under its margin floor is held in place by the dead-stock "tunnel" freeze
   even while it's selling — so sell-through's vote there is overridden (you'll see

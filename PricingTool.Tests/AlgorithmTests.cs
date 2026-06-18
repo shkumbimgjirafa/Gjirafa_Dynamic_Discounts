@@ -65,6 +65,23 @@ public class SellThroughTests
     }
 
     [Fact]
+    public void FreshlyStockedBurst_NoFalseAccelerationTrend()
+    {
+        // Just came into stock: all 90-day sales are in the last week (Qty7 == Qty90), so there's no
+        // baseline. The trend modifier must NOT fire — pre-fix, V7/V90 = 90/7 ≈ 12.9 falsely read as
+        // accelerating and shaved the discount. ~40 days of local stock → on-pace hold, unchanged.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, ksStock: 20,
+            qty7: 5, qty14: 5, qty30: 5, qty90: 5);
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal("SELL_THROUGH_HOLD", vote!.ReasonCode);
+        Assert.Equal(80m, vote.SuggestedPrice);          // 20% off anchor 100, held — no trend nudge
+        Assert.DoesNotContain("accelerating", vote.ReasonText);
+    }
+
+    [Fact]
     public void ZeroVelocity_Silent_DeadStockOwnsIt()
     {
         var ctx = TestData.Ctx(ksStock: 50); // all qty zero

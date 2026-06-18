@@ -20,7 +20,7 @@ namespace PricingTool.Core.Algorithms;
 /// </summary>
 public class SellThroughAlgorithm : IPricingAlgorithm
 {
-    private const int TrendMinSampleQty = 5;          // too few 90d units to read a trend
+    private const int TrendMinSampleQty = 5;          // min units sold BEFORE the last 7d to read a trend
     private const decimal HealthyMarginBufferPct = 5m; // "comfortably above the floor" for the remove branch
 
     public string Code => AlgorithmCodes.SellThrough;
@@ -58,8 +58,11 @@ public class SellThroughAlgorithm : IPricingAlgorithm
         };
 
         // Trend modifier: accelerating demand tempers the discount shallower; decelerating deepens it.
+        // Require a real baseline — at least TrendMinSampleQty units sold BEFORE the last 7 days — so a
+        // freshly-stocked one-week burst (Qty7 == Qty90) can't read as "accelerating": its V7/V90 ratio
+        // is mechanically ~90/7 because V90 divides recent sales over 90 days when there was no stock.
         var trendNote = "";
-        if (ctx.Qty90 >= TrendMinSampleQty && ctx.Velocity90 > 0)
+        if (ctx.Qty90 - ctx.Qty7 >= TrendMinSampleQty && ctx.Velocity90 > 0)
         {
             var accel = ctx.Velocity7 / ctx.Velocity90;
             if (accel >= 1.5m) { target = Math.Max(0m, target - 0.03m); trendNote = $" · accelerating ×{accel:0.0}"; }
