@@ -45,11 +45,13 @@ public static class DependencyInjection
         {
             services.AddScoped<ISourceDataReader, DemoSourceDataReader>();
             services.AddScoped<IElasticitySourceReader, DemoElasticitySourceReader>();
+            services.AddScoped<ISkuElasticityPointsReader, DemoSkuElasticityPointsReader>();
         }
         else
         {
             services.AddScoped<ISourceDataReader, SqlSourceDataReader>();
             services.AddScoped<IElasticitySourceReader, SqlElasticitySourceReader>();
+            services.AddScoped<ISkuElasticityPointsReader, SqlSkuElasticityPointsReader>();
         }
 
         services.AddScoped<IBulkWriteService, BulkWriteService>();

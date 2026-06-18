@@ -49,6 +49,16 @@
     </div></div></div>
 </div>
 
+<div class="row g-3 mb-4">
+    <div class="col-12"><div class="card"><div class="card-body">
+        <h6>Price → gross profit
+            <small class="text-muted">— each point is one week's sales; bubble size = units; Y is VAT-net profit at today's cost (last 365d)</small>
+        </h6>
+        <div id="ppStatus" class="text-muted small mb-1">Loading…</div>
+        <canvas id="priceProfitChart" height="150"></canvas>
+    </div></div></div>
+</div>
+
 <h5>Run-by-run decisions</h5>
 @foreach (var item in Model.Proposals)
 {
@@ -130,5 +140,36 @@
         data: { labels, datasets: [{ label: 'Units (7d trailing)', data: @Html.Raw(qty), backgroundColor: '#fd7e1488' }] },
         options: { scales: { x: { ticks: { maxTicksLimit: 12 } } } }
     });
+
+    // Price → gross profit scatter — fetched on demand (nothing stored); the page is already rendered.
+    fetch('@Url.Action("PriceProfitData", "Sku", new { id = Model.Sku })')
+        .then(r => r.json())
+        .then(d => {
+            const status = document.getElementById('ppStatus');
+            if (!d.points || d.points.length === 0) { status.textContent = d.message || 'No sales history to plot.'; return; }
+            status.textContent = '';
+            const data = d.points.map(p => ({ x: p.x, y: p.y, r: Math.min(20, 4 + Math.sqrt(p.units)) }));
+            const datasets = [{ label: 'Weekly price → profit', data, backgroundColor: '#0d6efd55', borderColor: '#0d6efd' }];
+            if (d.currentPrice) {
+                const ys = d.points.map(p => p.y).concat(0);
+                datasets.push({ type: 'line', label: 'Current price', borderColor: '#dc3545', borderDash: [4, 4], pointRadius: 0, fill: false,
+                    data: [{ x: d.currentPrice, y: Math.min(...ys) }, { x: d.currentPrice, y: Math.max(...ys) }] });
+            }
+            new Chart(document.getElementById('priceProfitChart'), {
+                type: 'bubble',
+                data: { datasets },
+                options: {
+                    plugins: { tooltip: { callbacks: {
+                        label: function (c) {
+                            return '@cur ' + c.parsed.x + ' → ' + c.parsed.y + (c.raw.units ? ' (' + c.raw.units + ' u)' : '');
+                        } } } },
+                    scales: {
+                        x: { title: { display: true, text: 'Unit price (@cur)' } },
+                        y: { title: { display: true, text: 'Gross profit (@cur, VAT-net)' } }
+                    }
+                }
+            });
+        })
+        .catch(() => { document.getElementById('ppStatus').textContent = 'Could not load sales history.'; });
 </script>
 }
