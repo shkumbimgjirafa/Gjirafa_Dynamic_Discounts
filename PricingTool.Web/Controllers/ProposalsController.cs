@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using PricingTool.Core.Abstractions;
 using PricingTool.Core.Algorithms;
 using PricingTool.Core.Options;
+using PricingTool.Core.Services;
 using PricingTool.Data;
 using PricingTool.Data.Entities;
 using PricingTool.Data.Services;
@@ -73,7 +74,45 @@ public class ProposalsController : Controller
         };
 
         model.Proposals = await query.Take(500).ToListAsync();
+        model.Kpis = await BuildWindowKpisAsync(model.Filter, layerId);
         return View(model);
+    }
+
+    /// <summary>
+    /// Profit/margin impact (now→proposed) over 7d/30d/90d for the CURRENT filtered view, aggregated in
+    /// one SQL round-trip over the filtered proposals joined to the run's snapshot (cost-known SKUs only).
+    /// Sums the per-window terms in SQL, then defers to <see cref="KpiMath.FromSums"/> (shared with Movers).
+    /// </summary>
+    private async Task<List<WindowProfit>> BuildWindowKpisAsync(ProposalsFilter filter, int layerId)
+    {
+        var snapDate = await _db.DailySnapshots
+            .Where(s => s.LayerId == layerId)
+            .MaxAsync(s => (DateTime?)s.SnapshotDate);
+        if (snapDate is null) return new();
+
+        var vat = await _db.Layers.Where(l => l.Id == layerId).Select(l => l.VatRatePct).FirstAsync();
+
+        var costed =
+            from p in BuildFilteredQuery(filter)
+            where p.Pptcv != null
+            join s in _db.DailySnapshots.Where(d => d.LayerId == layerId && d.SnapshotDate == snapDate)
+                on p.Sku equals s.Sku
+            select new { p.CurrentPrice, Prop = p.ProposedPriceValue, Cost = p.Pptcv!.Value, s.Qty7, s.Qty30, s.Qty90 };
+
+        var agg = await costed.GroupBy(_ => 1).Select(g => new
+        {
+            C7 = g.Sum(x => x.CurrentPrice * x.Qty7), P7 = g.Sum(x => x.Prop * x.Qty7), K7 = g.Sum(x => x.Cost * x.Qty7),
+            C30 = g.Sum(x => x.CurrentPrice * x.Qty30), P30 = g.Sum(x => x.Prop * x.Qty30), K30 = g.Sum(x => x.Cost * x.Qty30),
+            C90 = g.Sum(x => x.CurrentPrice * x.Qty90), P90 = g.Sum(x => x.Prop * x.Qty90), K90 = g.Sum(x => x.Cost * x.Qty90),
+        }).FirstOrDefaultAsync();
+
+        if (agg is null) return new();
+        return new List<WindowProfit>
+        {
+            KpiMath.FromSums(7, agg.C7, agg.P7, agg.K7, vat),
+            KpiMath.FromSums(30, agg.C30, agg.P30, agg.K30, vat),
+            KpiMath.FromSums(90, agg.C90, agg.P90, agg.K90, vat),
+        };
     }
 
     private IQueryable<ProposedPrice> BuildFilteredQuery(ProposalsFilter filter)

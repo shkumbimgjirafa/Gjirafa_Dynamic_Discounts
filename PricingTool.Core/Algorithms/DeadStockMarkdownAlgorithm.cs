@@ -22,6 +22,9 @@ public class DeadStockMarkdownAlgorithm : IPricingAlgorithm
         // Gate on locally-held stock, not total: supplier-only dead stock is left alone.
         if (ctx.Qty90 != 0 || ctx.KsStock <= 0) return null;
 
+        // ZeroSaleStreakDays counts SNAPSHOT ROWS, which equal calendar days only at the ~daily (24h)
+        // run cadence. "14" therefore means "two weeks" only at 24h; a slower cadence (e.g. 72h) would
+        // make each step span ~3× longer calendar time — convert to calendar days if the cadence changes.
         var steps = ctx.ZeroSaleStreakDays / 14;
         // No discount ceiling: deepen freely; PriceAtDiscount caps the fraction at 0.99 and the
         // margin-floor guardrail sets the real limit on how low the price can land.

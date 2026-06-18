@@ -71,6 +71,8 @@ public class ProposalsViewModel
     public decimal ConfirmationThresholdPct { get; set; }
     public int TotalCount { get; set; }
     public int ApprovedCount { get; set; }
+    /// <summary>Profit/margin impact (now→proposed) over 7d/30d/90d for the current filtered view.</summary>
+    public List<PricingTool.Core.Services.WindowProfit> Kpis { get; set; } = new();
 }
 
 // ---------------------------------------------------------------- Bands
@@ -163,10 +165,15 @@ public class MoverRow
     public decimal AnchorPrice { get; set; }
     public decimal CurrentPrice { get; set; }
     public decimal ProposedPrice { get; set; }
+    public decimal? Pptcv { get; set; }
     public decimal ChangePct { get; set; }
     public int Qty7 { get; set; }
     public int Qty30 { get; set; }
     public int Qty90 { get; set; }
+    /// <summary>VAT-exclusive net revenue per trailing window (for the average-selling-price columns).</summary>
+    public decimal Net7 { get; set; }
+    public decimal Net30 { get; set; }
+    public decimal Net90 { get; set; }
     public int KsStock { get; set; }
     public int SupplierStock { get; set; }
     public string ReasonCodes { get; set; } = "";
@@ -178,4 +185,8 @@ public class MoversViewModel
     public PricingRun? Run { get; set; }
     public List<MoverRow> TopSellers { get; set; } = new();
     public List<MoverRow> DeadInStock { get; set; } = new();
+    /// <summary>Layer VAT rate, used to gross up net revenue into average selling prices.</summary>
+    public decimal VatRatePct { get; set; } = 18m;
+    /// <summary>Profit/margin impact (now→proposed) over 7d/30d/90d across the movers shown.</summary>
+    public List<PricingTool.Core.Services.WindowProfit> Kpis { get; set; } = new();
 }

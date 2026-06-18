@@ -15,7 +15,8 @@ namespace PricingTool.Data.Services;
 /// The correlated version did not complete on the full catalog (~680k SKUs); this version
 /// returns the whole set in ~20s. Schema: adds AnchorPrice (= ProductPricing.FinalPrice, with a
 /// shelf fallback) + AnchorFromShelf; drops the now-unused per-window avg-discount-% and the
-/// Net14/30/60/90 windows. Keep in sync with scripts/usp_GetDailyPricingDataset.sql.
+/// Net14/60 windows (Net7/30/90 are kept for the Movers average-selling-price columns). Keep in
+/// sync with scripts/usp_GetDailyPricingDataset.sql.
 /// </summary>
 public static class SourceQueries
 {
@@ -56,6 +57,7 @@ INNER JOIN #vendors v ON v.Id = p.VendorId
 INNER JOIN {opDb}.dbo.ProductWarehouseInventory pwi ON pwi.ProductId = p.Id
 INNER JOIN {opDb}.dbo.Warehouse w ON w.Id = pwi.WarehouseId
 WHERE ISNULL(p.IsOutlet, 0) = 0   -- outlets are priced by a separate system; never include them
+  AND p.Sku NOT LIKE '%yz'        -- 'yz' postfix = local-supplier SKUs, priced manually by a dedicated person
   AND (@ExcludeUnpublished = 0
        OR p.UnpublishedStoreids IS NULL
        OR p.UnpublishedStoreids NOT LIKE '%' + @storeIdStr + '%')
@@ -73,7 +75,8 @@ SELECT
     SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.Quantity     ELSE 0 END) AS [30d_qty],
     SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.PriceExclTax ELSE 0 END) AS [30d_net],
     SUM(CASE WHEN o.CreatedOnUtc >= @d60 THEN oi.Quantity     ELSE 0 END) AS [60d_qty],
-    SUM(oi.Quantity)     AS [90d_qty]
+    SUM(oi.Quantity)     AS [90d_qty],
+    SUM(oi.PriceExclTax) AS [90d_net]
 INTO #sales
 FROM {opDb}.dbo.OrderItem oi
 INNER JOIN {opDb}.dbo.[Order] o ON o.Id = oi.OrderId
@@ -142,9 +145,9 @@ SELECT
     st.IsNewProduct,
     ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],
     ISNULL(s.[14d_qty], 0) AS [14d_qty],
-    ISNULL(s.[30d_qty], 0) AS [30d_qty],
+    ISNULL(s.[30d_qty], 0) AS [30d_qty], ISNULL(s.[30d_net], 0) AS [30d_net],
     ISNULL(s.[60d_qty], 0) AS [60d_qty],
-    ISNULL(s.[90d_qty], 0) AS [90d_qty]
+    ISNULL(s.[90d_qty], 0) AS [90d_qty], ISNULL(s.[90d_net], 0) AS [90d_net]
 FROM #stock st
 LEFT JOIN #tier t  ON t.ProductId  = st.ProductId
 LEFT JOIN #disc dx ON dx.ProductId = st.ProductId

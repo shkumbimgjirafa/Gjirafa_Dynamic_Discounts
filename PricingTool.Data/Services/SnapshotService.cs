@@ -62,6 +62,10 @@ public class SnapshotService
     /// Consecutive most-recent snapshot days (including <paramref name="asOfDate"/>) where the
     /// SKU's trailing-7d quantity was zero. This is the tool-tracked aging signal for
     /// STOCK_AGING and DEAD_STOCK. Gaps in snapshot history simply aren't counted.
+    ///
+    /// NOTE: this counts SNAPSHOT ROWS, not calendar days — they coincide only at the ~daily (24h) run
+    /// cadence. At a slower cadence each row spans multiple calendar days, so consumers that read it as
+    /// "days" (DEAD_STOCK's 5pp-per-14 step) would under-count; convert to calendar days if cadence changes.
     /// </summary>
     public async Task<IReadOnlyDictionary<string, int>> GetZeroSaleStreaksAsync(
         int layerId, DateTime asOfDate, int lookbackDays = 180, CancellationToken ct = default)

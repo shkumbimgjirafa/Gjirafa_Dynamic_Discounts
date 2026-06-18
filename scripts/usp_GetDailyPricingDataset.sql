@@ -62,6 +62,7 @@ BEGIN
     INNER JOIN GjirafaMall.dbo.ProductWarehouseInventory pwi ON pwi.ProductId = p.Id
     INNER JOIN GjirafaMall.dbo.Warehouse w ON w.Id = pwi.WarehouseId
     WHERE ISNULL(p.IsOutlet, 0) = 0   -- outlets are priced by a separate system; never include them
+      AND p.Sku NOT LIKE '%yz'        -- 'yz' postfix = local-supplier SKUs, priced manually by a dedicated person
       AND (@ExcludeUnpublished = 0
            OR p.UnpublishedStoreids IS NULL
            OR p.UnpublishedStoreids NOT LIKE '%' + @storeIdStr + '%')
@@ -80,7 +81,8 @@ BEGIN
         SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.Quantity     ELSE 0 END) AS [30d_qty],
         SUM(CASE WHEN o.CreatedOnUtc >= @d30 THEN oi.PriceExclTax ELSE 0 END) AS [30d_net],
         SUM(CASE WHEN o.CreatedOnUtc >= @d60 THEN oi.Quantity     ELSE 0 END) AS [60d_qty],
-        SUM(oi.Quantity)     AS [90d_qty]
+        SUM(oi.Quantity)     AS [90d_qty],
+        SUM(oi.PriceExclTax) AS [90d_net]
     INTO #sales
     FROM GjirafaMall.dbo.OrderItem oi
     INNER JOIN GjirafaMall.dbo.[Order] o ON o.Id = oi.OrderId
@@ -114,9 +116,9 @@ BEGIN
         st.IsNewProduct,
         ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],
         ISNULL(s.[14d_qty], 0) AS [14d_qty],
-        ISNULL(s.[30d_qty], 0) AS [30d_qty],
+        ISNULL(s.[30d_qty], 0) AS [30d_qty], ISNULL(s.[30d_net], 0) AS [30d_net],
         ISNULL(s.[60d_qty], 0) AS [60d_qty],
-        ISNULL(s.[90d_qty], 0) AS [90d_qty]
+        ISNULL(s.[90d_qty], 0) AS [90d_qty], ISNULL(s.[90d_net], 0) AS [90d_net]
     FROM #stock st
     OUTER APPLY (
         SELECT TOP 1 tp.Price, tp.OldPrice

@@ -91,8 +91,10 @@ public class SqlSourceDataReader : ISourceDataReader
                 Net7 = Dec0(reader, "7d_net"),
                 Qty14 = Int0(reader, "14d_qty"),
                 Qty30 = Int0(reader, "30d_qty"),
+                Net30 = Dec0(reader, "30d_net"),
                 Qty60 = Int0(reader, "60d_qty"),
                 Qty90 = Int0(reader, "90d_qty"),
+                Net90 = Dec0(reader, "90d_net"),
                 LaunchDateUtc = null, // no reliable launch-date signal yet
             });
         }

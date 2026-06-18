@@ -179,7 +179,13 @@ new-product protection is now a hard engine rule from the platform MarkAsNew win
 supplier-only-no-markdown guardrail.)
 
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
-history: consecutive daily snapshots with zero trailing-7d sales.
+history: consecutive daily snapshots with zero trailing-7d sales. This counter measures **snapshot
+rows**, which equal calendar days only at the **24h run cadence** the engine is tuned for; a slower
+cadence (e.g. 72h) would make each row span multiple days and slow `DEAD_STOCK`'s 5pp-per-2-week
+progression — so the streak would need converting to calendar days before changing cadence.
+
+**Excluded at the source:** SKUs whose code ends in `yz` are local-supplier products priced manually
+by a dedicated person; the daily query drops them so the engine never proposes for them.
 
 `DEAD_STOCK` is the only algorithm allowed below the margin floor: for locally-held stock with no
 sales in 90 days, the markdown deepens 5pp every two weeks and may run down to **50% of cost**
@@ -187,6 +193,13 @@ sales in 90 days, the markdown deepens 5pp every two weeks and may run down to *
 `GuardrailService` (flag `DEAD_STOCK_FLOOR_RELAXED`), so it's gated on the dead-stock context, not on
 which algorithm voted. Once such a below-floor price starts selling again it's frozen at that level
 (`DEAD_STOCK_TUNNEL_HELD`) — never raised back.
+
+**Reporting.** Movers shows each SKU's average selling price per 7d/30d/90d window (gross, VAT incl.).
+Both Movers and Proposals show profit &amp; margin KPI cards — now → proposed over 7d/30d/90d, using a
+naive same-quantity baseline (assume the trailing window's units sell again at the current vs proposed
+price; VAT-net, cost-known SKUs only). Proposals' cards track the active filters; Movers' summarise the
+listed movers. The math lives in `KpiMath.FromSums` (shared by the in-memory Movers path and the
+single-round-trip Proposals SQL aggregate).
 
 ## Full-catalog scale
 

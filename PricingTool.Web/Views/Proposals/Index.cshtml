@@ -23,6 +23,8 @@
     return;
 }
 
+@await Html.PartialAsync("_KpiCards", Model.Kpis)
+
 <form method="get" class="row g-2 align-items-end my-3">
     <div class="col-auto">
         <label class="form-label mb-0">Run</label>

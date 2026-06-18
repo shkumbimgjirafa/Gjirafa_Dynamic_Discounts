@@ -1,6 +1,7 @@
 @model MoversViewModel
 @{
     ViewData["Title"] = "Movers";
+    ViewData["Vat"] = Model.VatRatePct; // flows to the _MoverTable partials for gross avg-price
 }
 
 <h1 class="h3">
@@ -17,6 +18,8 @@
 }
 else
 {
+    @await Html.PartialAsync("_KpiCards", Model.Kpis)
+
     <ul class="nav nav-tabs mb-3" role="tablist">
         <li class="nav-item">
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#sellers" type="button" role="tab">
