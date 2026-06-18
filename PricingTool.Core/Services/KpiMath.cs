@@ -3,8 +3,12 @@ namespace PricingTool.Core.Services;
 /// <summary>
 /// The profit &amp; margin impact of a run's proposed price changes over one trailing sales window,
 /// versus a naive do-nothing baseline: assume we keep selling the SAME units we sold in the window,
-/// at the CURRENT price ("now") vs the PROPOSED price. Prices and cost (PPTCV) are both VAT-inclusive,
-/// so margin = (price − cost) / price; only SKUs with a known cost contribute.
+/// at the CURRENT price ("now") vs the PROPOSED price. Only SKUs with a known cost contribute.
+///
+/// Prices and cost (PPTCV) are both VAT-INCLUSIVE. Reported PROFIT is VAT-EXCLUDED — the VAT in the
+/// selling price (and the reclaimable VAT inside PPTCV) is pass-through, not earnings — so profit
+/// (and the revenue it's measured against) is divided by (1 + VAT). Margin % is unaffected: the VAT
+/// cancels in netProfit/netRevenue, which still equals (price − cost) / price.
 /// </summary>
 public readonly record struct WindowProfit(
     int WindowDays,
@@ -29,21 +33,26 @@ public static class KpiMath
 {
     /// <summary>
     /// Build one window's profit/margin from three pre-summed terms over the cost-known SKUs (all
-    /// VAT-inclusive): Σ(currentPrice·qty), Σ(proposedPrice·qty), Σ(cost·qty). Profit = revenue − cost;
-    /// revenue is the price·qty sum directly (no VAT conversion — PPTCV is already all-in). Identical
-    /// whether the caller summed in memory (Movers) or in SQL (Proposals).
+    /// VAT-inclusive): Σ(currentPrice·qty), Σ(proposedPrice·qty), Σ(cost·qty). Profit and revenue are
+    /// reported VAT-EXCLUDED (÷ (1 + vat)) — the VAT is pass-through, not earnings. Margin % is the same
+    /// either way. Identical whether the caller summed in memory (Movers) or in SQL (Proposals).
     /// </summary>
     public static WindowProfit FromSums(
         int windowDays,
         decimal sumCurrentPriceQty,
         decimal sumProposedPriceQty,
-        decimal sumCostQty)
+        decimal sumCostQty,
+        decimal vatRatePct)
     {
+        var k = 1m + vatRatePct / 100m;
+        var revenueNow = sumCurrentPriceQty / k;
+        var revenueProposed = sumProposedPriceQty / k;
+        var costNet = sumCostQty / k;
         return new WindowProfit(
             windowDays,
-            sumCurrentPriceQty - sumCostQty,
-            sumProposedPriceQty - sumCostQty,
-            sumCurrentPriceQty,
-            sumProposedPriceQty);
+            revenueNow - costNet,
+            revenueProposed - costNet,
+            revenueNow,
+            revenueProposed);
     }
 }
