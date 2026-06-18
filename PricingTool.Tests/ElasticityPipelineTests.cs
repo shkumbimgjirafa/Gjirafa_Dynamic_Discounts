@@ -24,6 +24,16 @@ public class OlsRegressionTests
         Assert.Equal(-2.0, fit!.Value.Slope, 6);
         Assert.Equal(3.0, fit.Value.Intercept, 6);
         Assert.Equal(1.0, fit.Value.R2, 6);
+        Assert.Equal(0.0, fit.Value.StdErr, 6);   // perfect fit → zero standard error
+    }
+
+    [Fact]
+    public void Fit_TwoPoints_StdErrIsInfinite()
+    {
+        // n = 2 → no residual degrees of freedom → slope uncertainty is unidentifiable.
+        var fit = OlsRegression.Fit(new[] { 1.0, 2.0 }, new[] { 1.0, -1.0 });
+        Assert.NotNull(fit);
+        Assert.True(double.IsPositiveInfinity(fit!.Value.StdErr));
     }
 
     [Fact]
@@ -52,6 +62,7 @@ public class OlsRegressionTests
 
         Assert.Equal(viaArrays.Slope, viaSums.Slope, 9);
         Assert.Equal(viaArrays.R2, viaSums.R2, 9);
+        Assert.Equal(viaArrays.StdErr, viaSums.StdErr, 9);
     }
 }
 
@@ -95,6 +106,18 @@ public class ElasticityGateTests
     [InlineData(-0.5, false)]
     public void IsElastic_OnlyBelowMinusOne(double slope, bool expected)
         => Assert.Equal(expected, ElasticityGate.IsElastic(slope));
+
+    [Theory]
+    [InlineData(-2.0, 0.1, true)]    // clearly elastic, tight SE → confident
+    [InlineData(-1.18, 0.05, true)]  // near unit but tight → still confident
+    [InlineData(-1.18, 0.4, false)]  // near unit, noisy → not confident
+    [InlineData(-1.5, 0.5, false)]   // elastic point estimate but SE too wide → not confident
+    public void IsConfidentlyElastic_RequiresUpperCiBelowMinusOne(double slope, double se, bool expected)
+        => Assert.Equal(expected, ElasticityGate.IsConfidentlyElastic(slope, se));
+
+    [Fact]
+    public void IsConfidentlyElastic_InfiniteSe_IsNeverConfident()
+        => Assert.False(ElasticityGate.IsConfidentlyElastic(-3.0, double.PositiveInfinity));
 }
 
 public class ElasticityFitServiceTests
@@ -152,6 +175,8 @@ public class ElasticityFitServiceTests
         Assert.True(el.IsUsable);
         Assert.True(el.Coefficient < -1m);          // elastic
         Assert.True(el.R2 > 0.99m);
+        Assert.True(el.StandardError >= 0m && el.StandardError < 0.01m);  // perfect synthetic fit → ~0 SE
+        Assert.True(ElasticityGate.IsConfidentlyElastic((double)el.Coefficient, (double)el.StandardError));
 
         var inel = db.SkuElasticities.Single(e => e.Sku == "SKU-IN");
         Assert.True(inel.IsUsable);                 // well-fit but inelastic — stored, just not acted on

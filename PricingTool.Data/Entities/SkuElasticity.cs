@@ -17,6 +17,11 @@ public class SkuElasticity
 
     /// <summary>The OLS slope of ln(units) on ln(price) — the constant price elasticity of demand.</summary>
     public decimal Coefficient { get; set; }
+
+    /// <summary>Standard error of the slope. Algorithm 5 acts only when the coefficient is confidently
+    /// below −1 (Coefficient + z·StandardError ≤ −1), so noisy near-unit-elastic fits are excluded.</summary>
+    public decimal StandardError { get; set; }
+
     public decimal Intercept { get; set; }
     public decimal R2 { get; set; }
     public int ObservationCount { get; set; }       // weekly buckets used

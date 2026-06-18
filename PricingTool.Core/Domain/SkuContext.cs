@@ -40,6 +40,10 @@ public class SkuContext
     /// <summary>Fitted log-log price elasticity for this SKU in this layer; null when missing or not usable.</summary>
     public decimal? Elasticity { get; init; }
 
+    /// <summary>Standard error of the fitted elasticity; null when not fitted. Algorithm 5 acts only when
+    /// the coefficient is confidently below −1 (Elasticity + z·ElasticityStdError ≤ −1).</summary>
+    public decimal? ElasticityStdError { get; init; }
+
     public int KsStock { get; init; }
     public int SupplierStock { get; init; }
 

@@ -112,7 +112,8 @@ public class ElasticityTests
     public void ElasticCoefficient_VotesProfitMaxPrice()
     {
         // E=-2 → markup E/(E+1)=2 over the all-in cost 40 = 80.00 (cost is VAT-inclusive, so P* is a price).
-        var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 75m, pptcv: 40m, elasticity: -2.0m);
+        // Tight SE → confidently elastic.
+        var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 75m, pptcv: 40m, elasticity: -2.0m, elasticityStdError: 0.1m);
 
         var vote = _algorithm.Evaluate(ctx);
 
@@ -125,13 +126,41 @@ public class ElasticityTests
     public void HighlyElastic_VotesNearerCost_AMarkdown()
     {
         // E=-5 → markup 1.25 over the all-in cost 40 = 50.00, below the 90 current → markdown.
-        var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 90m, pptcv: 40m, elasticity: -5.0m);
+        var ctx = TestData.Ctx(oldPrice: 200m, currentPrice: 90m, pptcv: 40m, elasticity: -5.0m, elasticityStdError: 0.2m);
 
         var vote = _algorithm.Evaluate(ctx);
 
         Assert.NotNull(vote);
         Assert.Equal(50.00m, vote!.SuggestedPrice);
         Assert.True(vote.SuggestedPrice < ctx.CurrentPrice);
+    }
+
+    [Fact]
+    public void NoisyNearUnitElastic_StaysSilent()
+    {
+        // E = -1.18 but a wide SE → optimistic CI end (-1.18 + 1.645·0.4 = -0.52) isn't < -1, so we're
+        // NOT confident it's elastic → silent (avoids the exploding 6× markup).
+        var ctx = TestData.Ctx(currentPrice: 75m, pptcv: 40m, elasticity: -1.18m, elasticityStdError: 0.4m);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void NoStandardError_StaysSilent()
+    {
+        // Without an SE we can't confirm E < -1 (e.g. pre-refit rows) → silent.
+        var ctx = TestData.Ctx(currentPrice: 75m, pptcv: 40m, elasticity: -2.0m, elasticityStdError: null);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void ConfidentBarelyElastic_OptimalCappedAtAnchor()
+    {
+        // E = -1.18 with a tight SE IS confident (-1.18 + 1.645·0.05 = -1.098 ≤ -1). Markup 6.56× cost
+        // = 262 would exceed everything, but it's capped at the anchor (100) — never above the reference.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 40m, elasticity: -1.18m, elasticityStdError: 0.05m);
+        var vote = _algorithm.Evaluate(ctx);
+        Assert.NotNull(vote);
+        Assert.Equal(100m, vote!.SuggestedPrice);
     }
 
     [Fact]

@@ -1,7 +1,8 @@
 namespace PricingTool.Core.Services;
 
-/// <summary>Result of a simple ordinary-least-squares fit of y on x.</summary>
-public readonly record struct OlsFit(double Slope, double Intercept, double R2, int N);
+/// <summary>Result of a simple ordinary-least-squares fit of y on x. <see cref="StdErr"/> is the
+/// standard error of the slope (∞ when there are too few points to estimate it).</summary>
+public readonly record struct OlsFit(double Slope, double Intercept, double R2, double StdErr, int N);
 
 /// <summary>
 /// Closed-form simple linear regression (y = slope·x + intercept). For the elasticity fit we feed
@@ -42,6 +43,12 @@ public static class OlsRegression
         var intercept = (sumY - slope * sumX) / n;
         var r2 = syyc > 0 ? (sxyc * sxyc) / (sxxc * syyc) : 0d;
 
-        return new OlsFit(slope, intercept, r2, n);
+        // Standard error of the slope: SE = sqrt( MSE / Σ(x-x̄)² ), MSE = SSE / (n-2),
+        // SSE = Σ(y-ŷ)² = Syy_centered − slope·Sxy_centered. With <3 points the slope's uncertainty
+        // is unidentifiable → ∞ (the confidence gate then treats it as never-confident).
+        var sse = Math.Max(0d, syyc - slope * sxyc);
+        var stdErr = n > 2 ? Math.Sqrt(sse / (n - 2) / sxxc) : double.PositiveInfinity;
+
+        return new OlsFit(slope, intercept, r2, stdErr, n);
     }
 }

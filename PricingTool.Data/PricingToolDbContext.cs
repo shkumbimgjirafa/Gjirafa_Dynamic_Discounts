@@ -201,6 +201,7 @@ public class PricingToolDbContext : DbContext
             e.HasOne<Layer>().WithMany().HasForeignKey(x => x.LayerId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Sku).HasMaxLength(64);
             e.Property(x => x.Coefficient).HasPrecision(12, 6);
+            e.Property(x => x.StandardError).HasPrecision(12, 6);
             e.Property(x => x.Intercept).HasPrecision(18, 6);
             e.Property(x => x.R2).HasPrecision(9, 6);
             e.Property(x => x.PriceCv).HasPrecision(12, 6);

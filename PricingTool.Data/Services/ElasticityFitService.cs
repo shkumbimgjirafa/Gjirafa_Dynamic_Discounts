@@ -54,6 +54,7 @@ public class ElasticityFitService
                 LayerId = layerId,
                 Sku = inp.Sku,
                 Coefficient = ClampDecimal(fit.Slope, 9999m),
+                StandardError = double.IsFinite(fit.StdErr) ? ClampDecimal(fit.StdErr, 9999m) : 9999m,
                 Intercept = ClampDecimal(fit.Intercept, 99999m),
                 R2 = (decimal)Math.Clamp(fit.R2, 0d, 1d),
                 ObservationCount = inp.Observations,

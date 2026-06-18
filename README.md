@@ -187,6 +187,11 @@ progression — so the streak would need converting to calendar days before chan
 **Excluded at the source:** SKUs whose code ends in `yz` are local-supplier products priced manually
 by a dedicated person; the daily query drops them so the engine never proposes for them.
 
+`ELASTICITY` acts only on **confidently-elastic** SKUs: the weekly fit stores the slope **and its
+standard error**, and the profit-max price `cost·E/(E+1)` is voted only when `E + 1.645·SE ≤ −1` (the
+whole one-sided 95% interval is below −1). This silences noisy near-unit fits whose markup would
+explode (e.g. −1.18 ± 0.6 → ×6.6); the vote is additionally **capped at the anchor**.
+
 `DEAD_STOCK` is the only algorithm allowed below the margin floor: for locally-held stock with no
 sales in 90 days, the markdown deepens 5pp every two weeks and may run down to **50% of cost**
 (`PricingEngine:DeadStockFloorCostFraction`, a negative margin) to clear it. Enforced in

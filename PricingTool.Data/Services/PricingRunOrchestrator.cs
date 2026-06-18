@@ -134,9 +134,13 @@ public class PricingRunOrchestrator
             var bands = await _bandProvider.GetBandsAsync(layerId, ct);
             var streaks = await _snapshots.GetZeroSaleStreaksAsync(layerId, pulledAt.Date, ct: ct);
             // Usable elasticity coefficients only — Algorithm 5 sees a non-null value only when it's trustworthy.
-            var elasticities = await _db.SkuElasticities.AsNoTracking()
+            // Carry the standard error too so the algorithm can require statistical confidence that E < −1.
+            var elasticities = (await _db.SkuElasticities.AsNoTracking()
                 .Where(e => e.LayerId == layerId && e.IsUsable)
-                .ToDictionaryAsync(e => e.Sku, e => e.Coefficient, StringComparer.OrdinalIgnoreCase, ct);
+                .Select(e => new { e.Sku, e.Coefficient, e.StandardError })
+                .ToListAsync(ct))
+                .ToDictionary(e => e.Sku, e => (Coefficient: e.Coefficient, StdErr: e.StandardError),
+                    StringComparer.OrdinalIgnoreCase);
             var roundingOverrides = await _db.SkuOverrides.AsNoTracking()
                 .Where(o => o.LayerId == layerId && o.RoundingDisabled)
                 .Select(o => o.Sku)
@@ -227,7 +231,7 @@ public class PricingRunOrchestrator
         SnapshotRow row,
         IReadOnlyList<PriceBandConfig> bands,
         IReadOnlyDictionary<string, int> streaks,
-        IReadOnlyDictionary<string, decimal> elasticities,
+        IReadOnlyDictionary<string, (decimal Coefficient, decimal StdErr)> elasticities,
         HashSet<string> roundingDisabledSkus,
         DateTime pulledAt,
         decimal vatRatePct)
@@ -255,6 +259,13 @@ public class PricingRunOrchestrator
         if (band is null)
             return Skip(row, SkipReasons.NoBand);
 
+        decimal? elasticity = null, elasticityStdErr = null;
+        if (elasticities.TryGetValue(row.Sku, out var el))
+        {
+            elasticity = el.Coefficient;
+            elasticityStdErr = el.StdErr;
+        }
+
         var ctx = new SkuContext
         {
             Sku = row.Sku,
@@ -263,7 +274,8 @@ public class PricingRunOrchestrator
             CurrentPrice = currentPrice,
             Pptcv = row.Pptcv,
             GrossMarginPct = row.GrossMargin,
-            Elasticity = elasticities.TryGetValue(row.Sku, out var elasticity) ? elasticity : null,
+            Elasticity = elasticity,
+            ElasticityStdError = elasticityStdErr,
             KsStock = row.LocalWarehouseStock,
             SupplierStock = row.SupplierWarehouseStock,
             IsNewProduct = row.IsNewProduct,

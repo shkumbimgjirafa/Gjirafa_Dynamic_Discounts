@@ -19,6 +19,9 @@ public static class ElasticityGate
     public const double MinMagnitude = 0.05;        // |E| must exceed this (reject near-zero/noise)
     public const double MaxMagnitude = 8.0;         // |E| must be below this (reject collinear artifacts)
 
+    /// <summary>z for the one-sided confidence that the true elasticity is below −1 (1.645 ≈ 95%).</summary>
+    public const double ElasticConfidenceZ = 1.645;
+
     public static bool IsUsable(double slope, double r2, int observations, int distinctPricePoints, decimal priceRangeRatio) =>
         observations >= MinObservations
         && distinctPricePoints >= MinDistinctPricePoints
@@ -29,4 +32,13 @@ public static class ElasticityGate
 
     /// <summary>True when a usable coefficient is in the ELASTIC region Algorithm 5 acts on.</summary>
     public static bool IsElastic(double slope) => slope < -1.0;
+
+    /// <summary>
+    /// True only when we are statistically confident the elasticity is below −1: even the optimistic
+    /// (closest-to-zero) end of the one-sided confidence interval, slope + z·SE, is ≤ −1. This rejects
+    /// noisy near-unit-elastic fits (e.g. −1.18 ± 0.4) whose profit-max markup E/(E+1) would explode.
+    /// A non-finite SE (too few points) is never confident.
+    /// </summary>
+    public static bool IsConfidentlyElastic(double slope, double stdErr, double z = ElasticConfidenceZ) =>
+        double.IsFinite(stdErr) && slope + z * stdErr <= -1.0;
 }

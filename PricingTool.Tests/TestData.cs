@@ -47,7 +47,8 @@ public static class TestData
         decimal? anchorPrice = null,
         decimal? elasticity = null,
         decimal vatRatePct = 18m,
-        bool isNewProduct = false)
+        bool isNewProduct = false,
+        decimal? elasticityStdError = null)
     {
         return new SkuContext
         {
@@ -58,6 +59,7 @@ public static class TestData
             Pptcv = pptcv,
             GrossMarginPct = grossMarginPct,
             Elasticity = elasticity,
+            ElasticityStdError = elasticityStdError,
             KsStock = ksStock,
             SupplierStock = supplierStock,
             Qty7 = qty7, Qty14 = qty14, Qty30 = qty30, Qty60 = qty60, Qty90 = qty90,

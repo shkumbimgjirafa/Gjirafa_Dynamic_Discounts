@@ -111,15 +111,18 @@ of the Sell-through advisor (#1).
 **The question:** "Does demand here actually respond to price?"
 
 A per-SKU elasticity is **fitted weekly** from years of transaction history (a log-log
-regression of units sold against the realized price). Only SKUs with enough price variation
-and a trustworthy fit get a usable coefficient.
+regression of units sold against the realized price). The fit records both the coefficient **and
+its standard error**, and only SKUs with enough price variation and a trustworthy fit are stored.
 
-- **Clearly elastic** (|E| > 1) → vote the **profit-maximizing price** `P* = cost · E/(E+1)`
-  (the optimal markup over cost under constant-elasticity demand) — PPTCV is the all-in VAT-inclusive cost, so P* is already a selling price — clamped by
-  the guardrails. More-elastic SKUs move toward a price nearer cost (grow volume); barely-elastic
-  ones toward a higher markup (the anchor caps it).
-- **Inelastic, unit-elastic, or no trustworthy fit** → **stay silent** — left to the margin-tier
-  (#6) advisor and the margin-floor guardrail.
+- **Confidently elastic** → vote the **profit-maximizing price** `P* = cost · E/(E+1)` (PPTCV is the
+  all-in VAT-inclusive cost, so P* is already a selling price), **capped at the anchor** and clamped by
+  the guardrails. "Confidently" means the standard error puts the whole one-sided 95% interval below
+  −1 (`E + 1.645·SE ≤ −1`). A noisy near-unit estimate like `−1.18 ± 0.6` is **not** trusted, because
+  the markup `E/(E+1)` explodes as E nears −1 (−1.18 → ×6.6) — so we only act when we're sure the SKU
+  is genuinely elastic. More-elastic SKUs move toward a price nearer cost (grow volume); the anchor
+  cap bounds the rest.
+- **Not confidently elastic, inelastic, or no trustworthy fit** → **stay silent** — left to the
+  margin-tier (#6) advisor and the margin-floor guardrail.
 
 ---
 

@@ -247,6 +247,7 @@ END";
         t.Columns.Add("LayerId", typeof(int));
         t.Columns.Add("Sku", typeof(string));
         t.Columns.Add("Coefficient", typeof(decimal));
+        t.Columns.Add("StandardError", typeof(decimal));
         t.Columns.Add("Intercept", typeof(decimal));
         t.Columns.Add("R2", typeof(decimal));
         t.Columns.Add("ObservationCount", typeof(int));
@@ -259,7 +260,7 @@ END";
         {
             t.Rows.Add(
                 r.LayerId, r.Sku,
-                Round(r.Coefficient, 6), Round(r.Intercept, 6), Round(r.R2, 6),
+                Round(r.Coefficient, 6), Round(r.StandardError, 6), Round(r.Intercept, 6), Round(r.R2, 6),
                 r.ObservationCount, r.DistinctPricePoints, Round(r.PriceCv, 6),
                 r.IsUsable, r.FittedAtUtc);
         }
