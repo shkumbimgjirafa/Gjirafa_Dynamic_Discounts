@@ -44,7 +44,7 @@ migration; activating/deactivating or retuning a layer is a data edit (no redepl
 | `PricingTool.Data` | EF Core (migrations, `PricingTool` schema), per-layer source dataset readers, run orchestrator, bulk writer, CSV push integration, audit |
 | `PricingTool.Engine` | Background worker — scheduled recalculation, looping active layers (schedule read per layer from DB, admin-editable live) |
 | `PricingTool.Web` | ASP.NET Core admin UI + impact dashboard, layer switcher (dev-shim auth, Analyst/Manager roles) |
-| `PricingTool.Tests` | xUnit suite (130 tests): every algorithm incl. 0-vs-NULL handling, guardrails, VAT reconciliation, rounding-never-violates-guardrails (all conventions), weighted scoring, orchestrator policies |
+| `PricingTool.Tests` | xUnit suite (152 tests): every algorithm incl. 0-vs-NULL handling, guardrails, gross-margin & VAT math, profit/margin KPIs, rounding-never-violates-guardrails (all conventions), weighted scoring, orchestrator policies |
 
 ## Quick start (demo mode — no source database needed)
 
@@ -124,7 +124,7 @@ operational database per layer (`{opDb}` token). Inline mode is the source of tr
 
 | Key | Default | Meaning |
 |---|---|---|
-| `VatRatePct` | `18.0` | Default/fallback VAT. The **effective rate is per layer** (`Layer.VatRatePct`: 18 for KS/MK, 20 for AL). Shelf prices are VAT-inclusive; costs (PPTCV) and net revenue are VAT-exclusive; all margin math reconciles through the layer's rate (`VatMath`). |
+| `VatRatePct` | `18.0` | Default/fallback VAT. The **effective rate is per layer** (`Layer.VatRatePct`: 18 for KS/MK, 20 for AL). Prices **and** PPTCV (the all-in landed cost: purchase + transport + customs + VAT) are VAT-**inclusive**, so margin = (price − PPTCV) / price with no VAT conversion. VAT is used only to gross up VAT-exclusive sales revenue (e.g. the average-selling-price column). |
 | `StockoutRiskDays` | `14` | Algorithm 4 horizon: projected sellout within N days + healthy margin → vote discount off |
 | `NewProductProtectionDays` | `90` | Unused — new-product protection now uses the platform `MarkAsNew` window, not this config. |
 | `ChangeConfirmationThresholdPct` | `20.0` | Proposals beyond ±this % require explicit confirmation at approval (enforced server-side) |
@@ -148,7 +148,7 @@ opt-outs live in `SkuOverrides` (scoped per layer).
 3. Per SKU: skip & flag if cost is NULL (**never treated as zero**), price missing, or no band
    matches (**bands key off PPTCV/cost**, not the selling price); otherwise run every
    band-enabled algorithm → weighted average of votes (band weight × vote confidence) →
-   **guardrail clamp** (margin floor with VAT reconciliation + anchor/FinalPrice cap, falling back to the
+   **guardrail clamp** (margin floor on the all-in cost = PPTCV/(1−floor%) + anchor/FinalPrice cap, falling back to the
    shelf price + a flag when FinalPrice is missing; no discount ceiling; locally-held dead stock may pierce
    the floor down to 50% of cost, and a below-floor price that starts selling is held there) →
    **psychological rounding** that never violates the guardrails.

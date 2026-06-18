@@ -52,7 +52,7 @@ Reason-code names live in [ReasonCodeText.cs](../PricingTool.Web/Services/Reason
 
 An outcome stays `Pending` until a snapshot at/after `D0 + W` exists.
 
-### Metrics (all VAT-exclusive — `Net7` and `Pptcv` are already VAT-excl)
+### Metrics (`Net7` is VAT-exclusive revenue; `Pptcv` is the all-in **VAT-inclusive** cost — don't mix them: either compare margin as `(price − Pptcv)/price` on gross figures, or gross up `Net7` by the layer VAT before subtracting `Pptcv`)
 
 ```
 unitsPerDay        = Qty7 / 7

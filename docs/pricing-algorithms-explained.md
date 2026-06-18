@@ -40,7 +40,7 @@ prices only go live through the explicit **Push** step.
 | **Shelf price (OldPrice)** | The platform's strike-through "old" price. Shown for reference only — it no longer drives any calculation. |
 | **Current price** | What the product actually sells for today (may already be discounted). |
 | **Cost (PPTCV)** | What the item costs us to buy. Used for margin. If it's missing, the SKU is skipped — we never guess it. |
-| **Margin** | How much of the selling price is profit after cost (and after VAT is stripped out). |
+| **Margin** | Profit as a share of the selling price: (price − cost) / price. PPTCV is the all-in **VAT-inclusive** cost, so it's compared directly to the (also VAT-inclusive) price — no VAT stripping. |
 | **Velocity** | Sales speed — units sold per day. We look at it over several time windows. |
 | **Days-to-sellout** | At today's sales speed, how many days until the stock runs out. |
 | **No-sale streak** | How many days in a row the item has sold nothing. |
@@ -115,7 +115,7 @@ regression of units sold against the realized price). Only SKUs with enough pric
 and a trustworthy fit get a usable coefficient.
 
 - **Clearly elastic** (|E| > 1) → vote the **profit-maximizing price** `P* = cost · E/(E+1)`
-  (the optimal markup over cost under constant-elasticity demand), grossed for VAT and clamped by
+  (the optimal markup over cost under constant-elasticity demand) — PPTCV is the all-in VAT-inclusive cost, so P* is already a selling price — clamped by
   the guardrails. More-elastic SKUs move toward a price nearer cost (grow volume); barely-elastic
   ones toward a higher markup (the anchor caps it).
 - **Inelastic, unit-elastic, or no trustworthy fit** → **stay silent** — left to the margin-tier
@@ -270,4 +270,5 @@ to cheap vs. expensive products, without changing any algorithm itself.
 | Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
 
 *All numeric thresholds above are the current defaults and can be tuned. Discounts are always
-measured against the full shelf price; margins are always computed after VAT is removed.*
+measured against the full shelf price; margin = (price − PPTCV) / price, where PPTCV is the all-in
+VAT-inclusive cost (purchase + transport + customs + VAT) — the same definition as the source GrossMargin.*
