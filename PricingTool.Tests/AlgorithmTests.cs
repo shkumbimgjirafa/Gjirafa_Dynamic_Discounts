@@ -224,7 +224,8 @@ public class MarginTierTests
     [Fact]
     public void HighMargin_AllowsDeeperCut()
     {
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, grossMarginPct: 45m);
+        // Current margin = (90 − 40) / 90 ≈ 55.6% ≥ 40% → high-margin branch.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 40m);
         var vote = _algorithm.Evaluate(ctx);
 
         Assert.NotNull(vote);
@@ -235,7 +236,8 @@ public class MarginTierTests
     [Fact]
     public void ThinMargin_VotesConservative_HalvesDiscount()
     {
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, grossMarginPct: 12m,
+        // Current margin = (80 − 72) / 80 = 10% ≤ floor 10% + 5pp → thin-margin branch.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 72m,
             band: TestData.Band(marginFloorPct: 10m));
         var vote = _algorithm.Evaluate(ctx);
 
@@ -247,7 +249,8 @@ public class MarginTierTests
     [Fact]
     public void MidTierMargin_NoOpinion()
     {
-        var ctx = TestData.Ctx(grossMarginPct: 25m, currentPrice: 90m);
+        // Current margin = (90 − 65) / 90 ≈ 27.8% — above floor+5pp but below 40% → no opinion.
+        var ctx = TestData.Ctx(currentPrice: 90m, pptcv: 65m);
         Assert.Null(_algorithm.Evaluate(ctx));
     }
 

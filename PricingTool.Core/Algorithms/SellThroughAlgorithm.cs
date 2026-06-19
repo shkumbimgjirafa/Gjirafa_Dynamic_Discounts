@@ -36,7 +36,7 @@ public class SellThroughAlgorithm : IPricingAlgorithm
         // Imminent sellout of local stock + healthy margin: discounting it only burns margin — remove
         // the discount. Math.Max keeps it from ever becoming a markdown (same guard the old Stockout algo used).
         if (days <= horizon &&
-            ctx.EffectiveMarginPct is decimal margin &&
+            ctx.CurrentMarginPct is decimal margin &&
             margin >= ctx.Band.MarginFloorPct + HealthyMarginBufferPct)
         {
             var removeConfidence = Math.Clamp(0.6m + 0.3m * (1m - days / horizon), 0m, 0.9m);

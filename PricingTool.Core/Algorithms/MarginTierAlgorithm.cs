@@ -17,7 +17,7 @@ public class MarginTierAlgorithm : IPricingAlgorithm
 
     public AlgorithmVote? Evaluate(SkuContext ctx)
     {
-        if (ctx.EffectiveMarginPct is not decimal margin) return null;
+        if (ctx.CurrentMarginPct is not decimal margin) return null;
 
         if (margin >= HighMarginThresholdPct)
         {

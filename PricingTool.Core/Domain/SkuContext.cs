@@ -34,7 +34,10 @@ public class SkuContext
     /// <summary>Purchase cost (VAT-exclusive EUR). Null cost SKUs are skipped before algorithms run.</summary>
     public decimal? Pptcv { get; init; }
 
-    /// <summary>Gross margin percent from the source pricing table (32.24 = 32.24%). May be null.</summary>
+    /// <summary>
+    /// Gross margin percent from the source pricing table (32.24 = 32.24%). Carried for reference/UI only;
+    /// pricing math uses <see cref="CurrentMarginPct"/> (PPTCV vs current price), never this. May be null.
+    /// </summary>
     public decimal? GrossMarginPct { get; init; }
 
     /// <summary>Fitted log-log price elasticity for this SKU in this layer; null when missing or not usable.</summary>
@@ -137,11 +140,12 @@ public class SkuContext
     public decimal? DaysToSelloutLocal =>
         WeightedDailyVelocity > 0 ? KsStock / WeightedDailyVelocity : null;
 
-    /// <summary>Margin percent at the current selling price computed from PPTCV (VAT reconciled). Null without cost.</summary>
+    /// <summary>
+    /// Margin percent at the current selling price computed from PPTCV (VAT reconciled). Null without cost.
+    /// This is THE margin signal every advisor uses — measured on the same PPTCV/current-price basis as the
+    /// margin-floor guardrail, so "within Npp of the floor" comparisons are apples-to-apples.
+    /// </summary>
     public decimal? CurrentMarginPct => VatMath.MarginPct(CurrentPrice, Pptcv);
-
-    /// <summary>Best available margin signal: source GrossMargin, falling back to the computed current margin.</summary>
-    public decimal? EffectiveMarginPct => GrossMarginPct ?? CurrentMarginPct;
 
     /// <summary>Price that applies the given discount fraction to the anchor price.</summary>
     public decimal PriceAtDiscount(decimal discountFraction) =>

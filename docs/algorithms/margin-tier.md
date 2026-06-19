@@ -30,7 +30,7 @@ louder advisors (sell-through, elasticity), not to drive the price on its own.
 
 | Input | Meaning | Why it matters here |
 |---|---|---|
-| **Effective margin %** | Source `GrossMargin` if present, else the cost-derived current margin | The *only* signal it acts on — fat vs thin. |
+| **Current margin %** | Margin at the **current price** vs **PPTCV** (VAT-reconciled) | The *only* signal it acts on — fat vs thin. |
 | **Band margin floor** | The band's minimum margin % | Defines "thin" (floor + 5pp). |
 | **Current discount** | How far below the **anchor** (FinalPrice) today's price sits, as a fraction | The starting point both branches adjust from. |
 | **Anchor price** | `ProductPricing.FinalPrice` | The proposed price is measured from here. |
@@ -45,7 +45,7 @@ louder advisors (sell-through, elasticity), not to drive the price on its own.
 
 ### Step 0 — Silence gate
 
-If there is **no margin signal** (`EffectiveMarginPct` is null — typically a null-cost SKU), it is
+If there is **no margin signal** (`CurrentMarginPct` is null — typically a null-cost SKU), it is
 **silent**. Otherwise it always lands in exactly one of three branches.
 
 ### Step 1 — The high-margin branch (fat → go a touch deeper)
@@ -94,16 +94,23 @@ percent unless another advisor is moving the price in the same direction.
 
 ## 5. Three worked examples (real, from run #29 · GjirafaMall/KS)
 
+> **Basis note (post-change):** these SKUs come from run #29, which ran on the *legacy* margin signal
+> (source `GrossMargin`, ≈ the list/anchor margin). The margins below have been **recomputed on the
+> current basis** — PPTCV vs the **current** price. For SKUs already discounted, the two differ sharply,
+> and **Example C's branch flips as a result** — that flip is the whole point of the change.
+
 ### Example A — `1406992mo` · Band 1 (€0–10) · high margin, lone voter (the pure nudge)
 
 | Fact | Value |
 |---|---|
-| Cost / Anchor / Current | €0.70 / €1.50 / €1.50 (at full price) |
-| Effective margin · high threshold | 53.4% · 40% |
+| Cost (PPTCV) / Anchor / Current | €0.70 / €1.50 / €1.50 (at full price) |
+| Current margin · high threshold | 53.3% · 40% |
 | Current discount off anchor | 0% |
 
+*(At full price, current price = anchor, so the current and list margins coincide here.)*
+
 **Margin-tier's reasoning**
-- Margin 53.4% ≥ 40% → **high-margin branch** → target = `0% + 3pp` = **3%**.
+- Margin 53.3% ≥ 40% → **high-margin branch** → target = `0% + 3pp` = **3%**.
 - Vote = `1.50 × (1 − 0.03)` = **€1.455**, confidence **0.4**, reason **`HIGH_MARGIN_ROOM`**.
 
 **The rest of the chain**
@@ -113,7 +120,7 @@ percent unless another advisor is moving the price in the same direction.
   is closer.
 - **Final = €1.49 (−0.7% vs €1.50).**
 
-> **Read:** this is margin-tier *in isolation* — and it shows why it's a light touch. A fat 53% margin
+> **Read:** this is margin-tier *in isolation* — and it shows why it's a light touch. A fat 53.3% margin
 > earns the item a 3pp nudge, but rounding swallows almost all of it: the price moves a single cent. On
 > its own, margin-tier barely registers; its job is to lean on the *blend*.
 
@@ -123,13 +130,15 @@ percent unless another advisor is moving the price in the same direction.
 
 | Fact | Value |
 |---|---|
-| Cost / Anchor / Current | €1.21 / €1.50 / €1.37 |
-| Effective margin · band floor (+5pp) | 19.2% · 15% (→ thin ≤ 20%) |
+| Cost (PPTCV) / Anchor / Current | €1.21 / €1.50 / €1.37 |
+| Current margin · band floor (+5pp) | 11.7% · 15% (→ thin ≤ 20%) |
 | Current discount off anchor | 8.7% |
 
+*(The legacy list margin was 19.2% — `(1.50 − 1.21)/1.50`. At the **current** €1.37 it's `(1.37 − 1.21)/1.37` = 11.7%, already under the floor.)*
+
 **Margin-tier's reasoning**
-- Margin 19.2% is within 5pp of the 15% floor (≤ 20%) **and** there's an 8.7% discount to pull back →
-  **thin-margin branch**.
+- Margin 11.7% is already below the 15% floor (well inside the ≤ 20% thin threshold) **and** there's an
+  8.7% discount to pull back → **thin-margin branch**.
 - target = `8.7% ÷ 2` = **4.3%** → **halve the discount**.
 - Vote = `1.50 × (1 − 0.043)` = **€1.435**, confidence **0.6**, reason **`THIN_MARGIN_CONSERVE`**.
 
@@ -140,36 +149,46 @@ percent unless another advisor is moving the price in the same direction.
   rejected → **1.49**.
 - **Final = €1.49 (+8.8% vs €1.37).**
 
-> **Read:** the protective face of margin-tier. A thin 19% margin with a live discount gets that discount
-> halved, pulling the price **up** toward the anchor — and the floor blocks any rounding that would dip
-> back under it. Here the conserve vote and the floor agree, so the price climbs to €1.49.
+> **Read:** the protective face of margin-tier — and a case where the basis change *sharpens* the signal.
+> At the current price the margin is only ~11.7%, already **under** the floor, so conserving is plainly
+> right; the discount is halved, pulling the price **up** toward the anchor, and the floor blocks any
+> rounding that would dip back under it. (On the legacy list margin this looked like a 19% item merely
+> "near" the floor — the current basis shows it's actually below it.)
 
 ---
 
-### Example C — `677213lt` · Band 2 (€10–50) · high margin, blended with a louder voice
+### Example C — `677213lt` · Band 2 (€10–50) · already deeply discounted → now mid-tier (silent)
 
 | Fact | Value |
 |---|---|
-| Cost / Anchor / Current | €19.00 / €39.50 / €25.49 |
-| Effective margin · band floor | 51.9% · 13% |
+| Cost (PPTCV) / Anchor / Current | €19.00 / €39.50 / €25.49 |
+| Current margin · high threshold · band floor (+5pp) | 25.5% · 40% · 13% (→ thin ≤ 18%) |
 | Current discount off anchor | 35.5% |
 
-**Margin-tier's reasoning**
-- Margin 51.9% ≥ 40% → **high-margin branch** → target = `35.5% + 3pp` = **38.5%**.
-- Vote = `39.50 × (1 − 0.385)` = **€24.30**, confidence **0.4** → effective weight = `0.4 × 40` = **16**.
+*(The legacy list margin was 51.9% — `(39.50 − 19.00)/39.50`. But this item is already **35.5% off**, so
+at the current €25.49 the margin is only `(25.49 − 19.00)/25.49` = **25.5%**.)*
+
+**Margin-tier's reasoning (under the corrected basis)**
+- Current margin 25.5% is **below** the 40% high threshold and **above** the thin threshold (18%) →
+  **mid-tier → no opinion**. Margin-tier is **silent**.
+- *(On the legacy list margin of 51.9% it would have fired `HIGH_MARGIN_ROOM` and voted ~€24.30 — i.e.
+  "there's room, discount this already-35%-off item even deeper." The current basis correctly sees the
+  margin has already been spent.)*
 
 **The rest of the chain**
-- Other vote: **SELL_THROUGH_REMOVE** — local stock sells out in ≈11 days at a 51.9% margin, so it votes
-  **full price €39.50**, confidence 0.66 → effective weight = `0.66 × 75` = **49.9**.
-- **Blend** = `(49.9 × 39.50 + 16 × 24.30) / 65.9` = **€35.81**.
-- Margin floor = `19.00 ÷ 0.87` = €21.84 → inside [21.84, 39.50], no clamp.
-- Rounding (band 2 `.99`, €1 grid): candidates 34.99 / 35.99 → **35.99** is closer.
-- **Final = €35.99 (+41.2% vs €25.49).**
+- Only vote: **SELL_THROUGH_REMOVE** — local stock sells out in ≈11 days, and 25.5% is still ≥ floor+5pp
+  (18%), so it stays healthy and votes **full price €39.50**.
+- Lone voter → raw = **€39.50** (the anchor; the guardrail ceiling).
+- Margin floor = `19.00 ÷ 0.87` = €21.84 → inside [21.84, 39.50]. `.99` rounding can't go above the
+  anchor, so it settles at **€38.99**.
+- **Final ≈ €38.99 (+53% vs €25.49).**
 
-> **Read:** the realistic case. Sell-through wants to *remove* the discount entirely (€39.50); margin-tier
-> says "there's room, go a touch deeper" (€24.30). With only a third of sell-through's pull, margin-tier
-> doesn't reverse the decision — it just tugs the blend down from €39.50 to €35.81. The price still rises
-> sharply, but margin-tier shaved ~€3.50 off how far. That tempering is exactly its purpose.
+> **Read:** the case the change was *made* for. The item is already 35.5% off, so its real (current)
+> margin is a middling 25.5%, not the fat 51.9% the list margin advertises. On the legacy signal,
+> margin-tier piled on — "high margin, cut deeper" — on an item that had already given up most of its
+> margin. On the current basis it correctly shuts up, and sell-through (which sees the item will sell out
+> regardless) carries the decision back toward full price. Same SKU, opposite contribution — because the
+> margin signal now reflects what the item *actually* earns at today's price.
 
 ---
 
@@ -185,8 +204,9 @@ percent unless another advisor is moving the price in the same direction.
   chasing a bit extra).
 - **Thin-margin only fires when there's a discount to pull back** (`current discount > 0`). A thin-margin
   item already at full price gets no vote.
-- **"Effective margin" uses the source `GrossMargin` first**, falling back to the cost-derived current
-  margin — the same signal sell-through uses for its "healthy margin" remove branch.
+- **The margin signal is the current margin** — computed from the **current price vs PPTCV** (VAT
+  reconciled), *not* the source `GrossMargin` and *not* the anchor margin. So as the live price moves
+  under a discount, the tier it lands in moves with it.
 - **The margin floor still bounds it like everyone else.** Margin-tier gets **no** tunnel exception — only
   [dead stock](dead-stock.md) is allowed below the floor. A high-margin deepening that would cross the
   floor is clamped right back to it.

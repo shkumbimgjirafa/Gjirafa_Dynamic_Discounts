@@ -31,7 +31,7 @@ one voice, so the same "how fast is it selling" signal is never counted three ti
 | **Weighted daily velocity** | Units/day, recent-weighted: 50% × last-7d rate + 30% × 14d + 20% × 30d | Recent sales count more than old sales |
 | **Days-to-sellout (local)** | Local stock ÷ weighted daily velocity | The core "level" signal |
 | **Current discount** | How far below the **anchor** (FinalPrice) today's price sits, as a fraction | The starting point it adjusts from |
-| **Effective margin** | Source `GrossMargin` if present, else the cost-derived margin | Gate for the "remove discount" branch |
+| **Current margin** | Margin at the **current price** vs **PPTCV** (VAT reconciled) | Gate for the "remove discount" branch |
 | **Band margin floor** | The band's minimum margin % | Defines "healthy margin" (floor + 5pp) |
 | **7d / 90d velocity** | Short-run vs long-run sales rate | The trend (accelerating / decelerating) signal |
 | **90d units** | Total units sold in 90 days | Must be ≥ 5 to trust the trend |
@@ -63,7 +63,7 @@ If neither gate fires, it always votes.
 
 If **both**:
 - the item sells out within the **stockout horizon** (default **14 days**), **and**
-- its **effective margin** is **healthy** = at least `band floor + 5pp`,
+- its **current margin** (PPTCV vs current price) is **healthy** = at least `band floor + 5pp`,
 
 then discounting it just burns margin on something that will sell out regardless. It votes for
 **full price** (`max(anchor, current price)` — never a markdown), reason **`SELL_THROUGH_REMOVE`**.
