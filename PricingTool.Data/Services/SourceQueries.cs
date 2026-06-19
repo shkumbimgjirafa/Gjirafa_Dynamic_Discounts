@@ -171,7 +171,16 @@ LEFT JOIN #age  ag ON ag.Sku       = st.Sku
 CROSS APPLY (
     SELECT
         ISNULL(NULLIF(t.OldPrice, 0), t.Price) AS OldPrice,
-        ISNULL(dx.DiscountedPrice, t.Price)    AS CurrentPrice
+        -- A campaign never RAISES the price. Take the active discounted price ONLY when it is below
+        -- the standing tier Price; otherwise fall back to t.Price. A 'deal' whose fixed DiscountAmount
+        -- lands at/above the shelf price is a mis-configured campaign, not what the customer pays —
+        -- using it would invert Current above Old/Anchor and read as a negative discount.
+        CASE
+            WHEN dx.DiscountedPrice IS NULL          THEN t.Price
+            WHEN t.Price IS NULL                     THEN dx.DiscountedPrice
+            WHEN dx.DiscountedPrice < t.Price        THEN dx.DiscountedPrice
+            ELSE t.Price
+        END AS CurrentPrice
 ) px
 LEFT JOIN #pricing pr ON pr.Sku = st.Sku
 LEFT JOIN #sales   s  ON s.ProductId = st.ProductId;
