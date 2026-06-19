@@ -97,52 +97,69 @@ public class GuardrailTests
         Assert.Equal(100m, bounds.Upper);
     }
 
-    // ---- Supplier-only dead stock: never marked down (engine-wide rule) -------------------
+    // ---- Supplier-only (cross-dock) stock: priced by the cross-dock lane, bounded by the margin floor ----
 
     [Fact]
-    public void Clamp_SupplierOnlyDeadStock_BlocksMarkdown_RaisesToCurrentPrice()
+    public void Clamp_SupplierOnlyNonSelling_MarksDownToFloor()
     {
-        // No local stock, all supplier, zero 90d sales: a markdown vote is pulled back to today's price.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+        // No local stock, all supplier, zero 90d sales: the cross-dock lane prices it, so a markdown is
+        // no longer frozen at today's price — it passes down toward (but not below) the margin floor.
+        // Cost 45 all-in, floor 10% → 45 / 0.90 = 50; a vote of 70 sits above the floor and stands.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 45m,
             ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
 
         var result = _guardrails.Clamp(ctx, 70m);
 
-        Assert.Equal(90m, result.Price);
-        Assert.Contains(GuardrailFlags.SupplierOnlyNoMarkdown, result.Flags);
+        Assert.Equal(70m, result.Price);
+        Assert.Empty(result.Flags);
     }
 
     [Fact]
-    public void Bounds_SupplierOnlyDeadStock_LowerBoundIsCurrentPrice()
+    public void Clamp_SupplierOnly_StopsAtMarginFloor_NoDeadStockTunnel()
     {
-        // The current price becomes the floor so rounding can't sneak a markdown back in.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+        // Supplier-only stock gets the NORMAL margin floor, never the dead-stock 50%-of-cost tunnel —
+        // nothing is sunk to recover. A vote of 40 is clamped UP to the floor (50), not relaxed below it.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
+
+        var result = _guardrails.Clamp(ctx, 40m);
+
+        Assert.Equal(50m, result.Price);
+        Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
+        Assert.DoesNotContain(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
+    }
+
+    [Fact]
+    public void Bounds_SupplierOnlyNonSelling_LowerBoundIsMarginFloor()
+    {
+        // Lower bound is the margin floor (50), not today's price — so the cross-dock markdown has room.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 45m,
             ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
 
         var bounds = _guardrails.GetBounds(ctx);
 
-        Assert.Equal(90m, bounds.Lower);
+        Assert.Equal(50m, bounds.Lower);
         Assert.Equal(100m, bounds.Upper);
     }
 
     [Fact]
-    public void Clamp_SupplierOnlyDeadStock_StillAllowsRaisingTowardFullPrice()
+    public void Clamp_SupplierOnly_AllowsRaisingTowardFullPrice()
     {
-        // Removing an existing discount is fine — only a net markdown is blocked.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+        // Removing an existing discount (raising the price) is fine and capped at the anchor.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 45m,
             ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
 
         var result = _guardrails.Clamp(ctx, 95m);
 
         Assert.Equal(95m, result.Price);
-        Assert.DoesNotContain(GuardrailFlags.SupplierOnlyNoMarkdown, result.Flags);
+        Assert.Empty(result.Flags);
     }
 
     [Fact]
     public void Clamp_SupplierStockThatSells_IsNotBlocked()
     {
-        // Supplier-only but it IS selling (qty90 > 0) → the rule doesn't apply; markdown passes.
-        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 10m,
+        // Supplier-only but it IS selling (qty90 > 0): a markdown passes (above the floor of 50).
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 90m, pptcv: 45m,
             ksStock: 0, supplierStock: 50, qty90: 12, band: TestData.Band(marginFloorPct: 10m));
 
         var result = _guardrails.Clamp(ctx, 70m);

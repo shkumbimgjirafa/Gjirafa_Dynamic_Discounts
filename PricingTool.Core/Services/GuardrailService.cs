@@ -11,14 +11,17 @@ public record ClampResult(decimal Price, IReadOnlyList<string> Flags);
 /// bound; the anchor price (ProductPricing.FinalPrice) caps the top (the tool proposes discounts,
 /// not raises above the anchor). There is no discount ceiling — discounts go as deep as the floor allows.
 ///
-/// Two stock-location rules live here too, both keyed off local vs supplier stock so that every
-/// algorithm (current and future) is covered at once rather than relying on each to be stock-aware:
-///  - Supplier-only dead stock is never marked down (see <see cref="IsSupplierOnlyDeadStock"/>).
-///  - Locally-held dead stock (no 90-day sales) is the ONE case allowed to pierce the margin floor —
-///    the dead-stock "tunnel". Its progressive markdown may run below the floor, down to
+/// The locally-held dead-stock "tunnel" lives here, keyed off local stock so that every algorithm
+/// (current and future) is covered at once rather than relying on each to be stock-aware:
+///  - Locally-held dead stock (no 90-day sales) is the ONE case allowed to pierce the margin floor.
+///    Its progressive markdown may run below the floor, down to
 ///    <see cref="Options.PricingEngineOptions.DeadStockFloorCostFraction"/> of cost (a negative margin),
 ///    to clear inventory we physically hold. And once such a below-floor price finally starts selling
 ///    again it is HELD at that level, never raised back — it stays at the price that moved units.
+///
+/// Supplier-only stock (none held locally) is NOT frozen here: the cross-dock lane prices it
+/// deliberately, so the normal margin-floor clamp is its only lower bound — a markdown may run down to
+/// the margin floor but never below it (nothing is sunk to recover, unlike locally-held dead stock).
 /// </summary>
 public class GuardrailService
 {
@@ -32,11 +35,6 @@ public class GuardrailService
     public PriceBounds GetBounds(SkuContext ctx)
     {
         var lower = MarginFloor(ctx);
-
-        // Supplier-only dead stock: the current price becomes the floor, so neither clamping nor
-        // rounding can push it below today's price (i.e. produce a markdown).
-        if (IsSupplierOnlyDeadStock(ctx))
-            lower = Math.Max(lower, ctx.CurrentPrice);
 
         if (IsLocalDeadStock(ctx))
         {
@@ -65,15 +63,6 @@ public class GuardrailService
         var marginFloor = MarginFloor(ctx);
 
         var price = rawPrice;
-
-        // Supplier-only dead stock: never mark it down — we don't give margin away on inventory we
-        // don't hold locally that isn't selling. Pulling the price up toward full price (removing an
-        // existing discount) is still allowed; only a net markdown below today's price is blocked.
-        if (IsSupplierOnlyDeadStock(ctx) && price < ctx.CurrentPrice)
-        {
-            price = ctx.CurrentPrice;
-            flags.Add(GuardrailFlags.SupplierOnlyNoMarkdown);
-        }
 
         // Locally-held dead stock (no 90-day sales): the one exception to the margin floor.
         if (IsLocalDeadStock(ctx))
@@ -149,15 +138,6 @@ public class GuardrailService
         ctx.Pptcv.HasValue
             ? ctx.Pptcv.Value * ctx.Options.DeadStockFloorCostFraction
             : 0m;
-
-    /// <summary>
-    /// True when every unit sits in a supplier warehouse (none held locally) and nothing has sold
-    /// in 90 days. We don't mark such stock down — there's no point giving margin away on inventory
-    /// we don't hold and that isn't selling. Algorithm 7 already abstains on it; this guardrail is
-    /// the engine-wide backstop for every other algorithm (and any added later).
-    /// </summary>
-    public static bool IsSupplierOnlyDeadStock(SkuContext ctx) =>
-        ctx.KsStock == 0 && ctx.SupplierStock > 0 && ctx.Qty90 == 0;
 
     /// <summary>
     /// Locally-held stock we may clear at a loss: held in our own warehouse, with a known cost, not a

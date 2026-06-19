@@ -43,6 +43,23 @@ public class PricingEngineOptions
     /// </summary>
     public int DeadStockMinStockAgeDays { get; set; } = 30;
 
+    /// <summary>
+    /// Cross-dock (supplier-fulfilled) progressive markdown — the initial discount, in percent of the
+    /// anchor, applied to a non-selling supplier-only SKU on the first step. Deliberately softer than
+    /// dead-stock's 10% start: a cross-dock markdown is demand discovery on inventory we don't hold, not
+    /// loss-recovery on stock we own. The markdown never runs below the band margin floor.
+    /// </summary>
+    public decimal CrossDockStartDiscountPct { get; set; } = 5m;
+
+    /// <summary>Cross-dock markdown: extra percentage points of discount added per step interval (softer than dead-stock's 5pp/2wk via a longer interval).</summary>
+    public decimal CrossDockStepPct { get; set; } = 5m;
+
+    /// <summary>
+    /// Cross-dock markdown: snapshot rows (≈ calendar days at the 24h cadence) per markdown step. Longer
+    /// than dead-stock's 14 so a non-selling supplier SKU is discounted more gently over time.
+    /// </summary>
+    public int CrossDockStepIntervalDays { get; set; } = 21;
+
     /// <summary>When true the source reader is replaced by the demo data generator (no source DB needed).</summary>
     public bool UseDemoData { get; set; }
 

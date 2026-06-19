@@ -32,13 +32,14 @@ public static class DependencyInjection
         services.AddSingleton<RoundingService>();
         services.AddSingleton<PriceCalculator>();
 
-        // The 4 pricing algorithms. Per-band enable/disable + weights live in BandAlgorithmSettings.
+        // The 5 pricing algorithms. Per-band enable/disable + weights live in BandAlgorithmSettings.
         // (Velocity family merged into SellThrough; discount-effectiveness retired; new-product
         // protection is now a hard engine rule from the MarkAsNew window, not a voting algorithm.)
         services.AddSingleton<IPricingAlgorithm, SellThroughAlgorithm>();
         services.AddSingleton<IPricingAlgorithm, PriceElasticityHeuristicAlgorithm>();
         services.AddSingleton<IPricingAlgorithm, MarginTierAlgorithm>();
         services.AddSingleton<IPricingAlgorithm, DeadStockMarkdownAlgorithm>();
+        services.AddSingleton<IPricingAlgorithm, CrossDockMarkdownAlgorithm>();
 
         var useDemoData = config.GetSection(PricingEngineOptions.SectionName).GetValue<bool>("UseDemoData");
         if (useDemoData)

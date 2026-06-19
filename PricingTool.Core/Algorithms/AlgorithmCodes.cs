@@ -6,6 +6,7 @@ public static class AlgorithmCodes
     public const string Elasticity = "ELASTICITY";
     public const string MarginTier = "MARGIN_TIER";
     public const string DeadStock = "DEAD_STOCK";
+    public const string CrossDock = "CROSS_DOCK";
 
     /// <summary>
     /// The active algorithm roster with default per-band weights (0–100) used for seeding.
@@ -20,5 +21,8 @@ public static class AlgorithmCodes
         (DeadStock, "Dead-stock progressive markdown", 75),
         (Elasticity, "Price elasticity (fitted)", 80),
         (MarginTier, "Margin-tier prioritization", 40),
+        // Low default weight: defers to elasticity (80) when both fire; carries the vote for
+        // supplier-fulfilled SKUs when elasticity is absent (the common case).
+        (CrossDock, "Cross-dock (supplier-fulfilled) markdown", 40),
     };
 }

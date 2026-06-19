@@ -372,7 +372,7 @@ public class ZeroVersusNullHandlingTests
     {
         new SellThroughAlgorithm(),
         new PriceElasticityHeuristicAlgorithm(), new MarginTierAlgorithm(),
-        new DeadStockMarkdownAlgorithm(),
+        new DeadStockMarkdownAlgorithm(), new CrossDockMarkdownAlgorithm(),
     }.Select(a => new object[] { a });
 
     [Theory]
@@ -397,5 +397,174 @@ public class ZeroVersusNullHandlingTests
         Assert.NotNull(new DeadStockMarkdownAlgorithm().Evaluate(ctx));
         Assert.Null(new PriceElasticityHeuristicAlgorithm().Evaluate(ctx));
         Assert.Null(new SellThroughAlgorithm().Evaluate(ctx));
+        Assert.Null(new CrossDockMarkdownAlgorithm().Evaluate(ctx));   // locally held → not cross-dock's lane
+    }
+}
+
+/// <summary>
+/// Cross-dock (supplier-fulfilled) lane: KsStock == 0, SupplierStock &gt; 0. A sell-through/dead-stock
+/// hybrid — hold the working price when selling, soft progressive markdown to the margin floor when not.
+/// </summary>
+public class CrossDockTests
+{
+    private readonly CrossDockMarkdownAlgorithm _algorithm = new();
+
+    // ---- Eligibility ----------------------------------------------------------------------
+
+    [Fact]
+    public void LocallyHeldStock_Abstains()
+    {
+        // We hold it locally → SELL_THROUGH / DEAD_STOCK own this; cross-dock stays out.
+        var ctx = TestData.Ctx(ksStock: 10, supplierStock: 50, qty90: 0);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void NoSupplierStock_Abstains()
+    {
+        var ctx = TestData.Ctx(ksStock: 0, supplierStock: 0, qty90: 5);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void NewProduct_Abstains()
+    {
+        // Held by the engine's new-product rule — never vote on it.
+        var ctx = TestData.Ctx(ksStock: 0, supplierStock: 50, qty90: 0, isNewProduct: true);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void NoCost_Abstains()
+    {
+        // No PPTCV → no margin floor to bound the markdown; abstain rather than vote unbounded.
+        var ctx = TestData.Ctx(ksStock: 0, supplierStock: 50, qty90: 0, pptcv: null);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    // ---- Branch B: not selling (Qty90 == 0) — soft progressive tunnel ---------------------
+
+    [Fact]
+    public void NonSelling_FirstStep_AppliesGentleStartDiscount()
+    {
+        // anchor 100, no existing discount, streak 0 → schedule disc = 5% start → 95.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty90: 0, zeroSaleStreakDays: 0,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal(95m, vote!.SuggestedPrice);          // 100 × (1 − 0.05)
+        Assert.Equal("CROSS_DOCK_TUNNEL", vote.ReasonCode);
+    }
+
+    [Fact]
+    public void NonSelling_DeepensWithStreak()
+    {
+        // streak 42 → 2 steps → disc = 5% + 2×5% = 15% → 85; monotonic vs the 21-day single step (90).
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty90: 0, zeroSaleStreakDays: 42,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        Assert.Equal(85m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
+
+    [Fact]
+    public void NonSelling_StopsAtMarginFloor()
+    {
+        // Deep streak: schedule disc (55%) would price below the floor; clamp at the floor (cost 45,
+        // floor 10% → 45 / 0.90 = 50), never the dead-stock 50%-of-cost tunnel.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty90: 0, zeroSaleStreakDays: 210,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        Assert.Equal(50m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
+
+    [Fact]
+    public void NonSelling_StartsAtCurrentPrice_HoldsWhileScheduleBelowExistingDiscount()
+    {
+        // Already 20% off (current 80). One step's schedule (10%) is shallower than the existing 20%,
+        // so the price holds at today's 80 — the markdown starts AT the current price, never raises it.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty90: 0, zeroSaleStreakDays: 21,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        Assert.Equal(80m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
+
+    [Fact]
+    public void PricedBelowFloor_LiftsToFloor()
+    {
+        // current 40 is below the floor (50): the one upward move — lift to the floor and stop.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 40m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty90: 0, band: TestData.Band(marginFloorPct: 10m));
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal(50m, vote!.SuggestedPrice);
+        Assert.Equal("CROSS_DOCK_FLOOR", vote.ReasonCode);
+    }
+
+    // ---- Branch A: selling (Qty90 > 0) — sticky hold ---------------------------------------
+
+    [Fact]
+    public void Selling_HoldsTheWorkingPrice()
+    {
+        // Selling steadily at a 20% discount → hold it; the discount is what's moving units.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty7: 7, qty90: 30,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal(80m, vote!.SuggestedPrice);          // never clawed back
+        Assert.Equal("CROSS_DOCK_HOLD", vote.ReasonCode);
+    }
+
+    [Fact]
+    public void Selling_ButDecaying_WithMarginRoom_DeepensOneStep()
+    {
+        // Sold over 90d but nothing in the last 7 (v7 0 ≤ ½·v90) and margin is healthy → deepen one step:
+        // 20% + 5% = 25% → 75.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty7: 0, qty90: 30,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal(75m, vote!.SuggestedPrice);
+        Assert.Equal("CROSS_DOCK_DEFEND", vote.ReasonCode);
+    }
+
+    [Fact]
+    public void Selling_ButDecaying_ThinMargin_Holds()
+    {
+        // Decaying but margin is thin (current 52, cost 45 → 13.5% < floor 10% + 5pp buffer) → hold,
+        // don't erode it further.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 52m, pptcv: 45m,
+            ksStock: 0, supplierStock: 50, qty7: 0, qty90: 30,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        var vote = _algorithm.Evaluate(ctx);
+
+        Assert.NotNull(vote);
+        Assert.Equal(52m, vote!.SuggestedPrice);
+        Assert.Equal("CROSS_DOCK_HOLD", vote.ReasonCode);
+    }
+
+    [Fact]
+    public void NeverRaisesAboveCurrent_WhenSelling()
+    {
+        // Even selling well at a deep discount, the lane never votes a price above today's — it's monotonic.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 60m, pptcv: 20m,
+            ksStock: 0, supplierStock: 50, qty7: 14, qty90: 60,
+            band: TestData.Band(marginFloorPct: 10m));
+
+        Assert.True(_algorithm.Evaluate(ctx)!.SuggestedPrice <= 60m);
     }
 }
