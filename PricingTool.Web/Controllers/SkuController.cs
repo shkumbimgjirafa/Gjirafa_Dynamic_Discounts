@@ -67,11 +67,11 @@ public class SkuController : Controller
     /// <summary>
     /// On-demand sales history for the SKU details charts, queried live from the SR_ProductsData source
     /// (same window/scope as the elasticity fit) and never stored:
-    ///  • <c>pricePoints</c> — weekly buckets for the price→gross-profit scatter, Y = VAT-net profit at
-    ///    today's all-in cost: ((unit price − PPTCV)/(1+VAT)) × units. Needs PPTCV; empty without it.
-    ///  • <c>monthlyNetSales</c> — monthly totals of net sales (VAT-exclusive NetoPrice) + units. No cost
-    ///    needed, so it still renders when PPTCV is missing.
-    /// Always returns JSON (never 500s the page): per-chart messages cover no-history / no-cost / error.
+    ///  • <c>pricePoints</c> — weekly buckets for the price→gross-profit scatter, Y = the ACTUAL VAT-net
+    ///    gross profit earned that week (SUM(Margin) = SUM(NetoPrice − Cogs)), using the real per-order
+    ///    landed cost — not today's PPTCV. No PPTCV needed, so it renders whenever there's sales history.
+    ///  • <c>monthlyNetSales</c> — monthly totals of net sales (VAT-exclusive NetoPrice) + units.
+    /// Always returns JSON (never 500s the page): per-chart messages cover no-history / error.
     /// </summary>
     public async Task<IActionResult> SalesHistoryData(string id)
     {
@@ -103,25 +103,15 @@ public class SkuController : Controller
             return Json(new { pricePoints = Array.Empty<object>(), monthlyNetSales = Array.Empty<object>(), priceMessage = "Sales history is unavailable right now.", monthlyMessage = "Sales history is unavailable right now." });
         }
 
-        // Scatter: VAT-net profit per weekly bucket at today's all-in cost (only when PPTCV is known).
-        object[] pricePoints;
-        string? priceMessage;
-        if (snap?.Pptcv is decimal cost)
+        // Scatter: ACTUAL VAT-net gross profit per weekly bucket, from SR_ProductsData.Margin (= NetoPrice −
+        // Cogs) using the real landed cost recorded on each order line — not today's PPTCV.
+        var pricePoints = buckets.Select(b => (object)new
         {
-            var vat = layer.VatRatePct;
-            pricePoints = buckets.Select(b => (object)new
-            {
-                x = b.UnitPrice,
-                y = Math.Round(VatMath.NetFromGross(b.UnitPrice - cost, vat) * b.Units, 2),
-                units = b.Units,
-            }).ToArray();
-            priceMessage = pricePoints.Length == 0 ? "No sales history to plot." : null;
-        }
-        else
-        {
-            pricePoints = Array.Empty<object>();
-            priceMessage = "No cost (PPTCV) for this SKU — can't compute profit.";
-        }
+            x = b.UnitPrice,
+            y = Math.Round(b.RealizedProfit, 2),
+            units = b.Units,
+        }).ToArray();
+        string? priceMessage = pricePoints.Length == 0 ? "No sales history to plot." : null;
 
         var monthlyNetSales = months.Select(m => new
         {

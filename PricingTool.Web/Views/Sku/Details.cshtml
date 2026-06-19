@@ -35,22 +35,19 @@
 }
 
 <div class="row g-3 mb-4">
-    <div class="col-12"><div class="card"><div class="card-body">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-body">
         <h6>Net sales — monthly
             <small class="text-muted">— net revenue (VAT-excl) per month, last 24 months</small>
         </h6>
         <div id="nsStatus" class="text-muted small mb-1">Loading…</div>
-        <canvas id="netSalesChart" height="120"></canvas>
+        <div style="position:relative;height:300px"><canvas id="netSalesChart"></canvas></div>
     </div></div></div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-12"><div class="card"><div class="card-body">
+    <div class="col-lg-6"><div class="card h-100"><div class="card-body">
         <h6>Price → gross profit
-            <small class="text-muted">— each point is one week's sales; bubble size = units; Y is VAT-net profit at today's cost (last 365d)</small>
+            <small class="text-muted">— each point is one week's sales; bubble size = units; Y is the actual VAT-net profit at that week's real cost (last 365d)</small>
         </h6>
         <div id="ppStatus" class="text-muted small mb-1">Loading…</div>
-        <canvas id="priceProfitChart" height="150"></canvas>
+        <div style="position:relative;height:300px"><canvas id="priceProfitChart"></canvas></div>
     </div></div></div>
 </div>
 
@@ -137,6 +134,7 @@
                     data: { labels: ns.map(m => m.label),
                         datasets: [{ label: 'Net sales @cur', data: ns.map(m => m.netSales), backgroundColor: '#19875488' }] },
                     options: {
+                        responsive: true, maintainAspectRatio: false,
                         plugins: { tooltip: { callbacks: {
                             label: function (c) {
                                 const u = ns[c.dataIndex] ? ns[c.dataIndex].units : 0;
@@ -165,6 +163,7 @@
                     type: 'bubble',
                     data: { datasets },
                     options: {
+                        responsive: true, maintainAspectRatio: false,
                         plugins: { tooltip: { callbacks: {
                             label: function (c) {
                                 return '@cur ' + c.parsed.x + ' → ' + c.parsed.y + (c.raw.units ? ' (' + c.raw.units + ' u)' : '');

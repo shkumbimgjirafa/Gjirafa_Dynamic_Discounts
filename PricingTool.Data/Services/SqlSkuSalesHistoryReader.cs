@@ -24,11 +24,13 @@ public class SqlSkuSalesHistoryReader : ISkuSalesHistoryReader
         _logger = logger;
     }
 
-    // Weekly buckets (ISO week) of volume-weighted VAT-inclusive unit price + units — the price→profit scatter.
+    // Weekly buckets (ISO week) of volume-weighted VAT-inclusive unit price + units + realized profit — the
+    // price→profit scatter. Profit is SUM(Margin) = SUM(NetoPrice − Cogs): the ACTUAL VAT-net gross profit
+    // earned that week using the real landed cost recorded on each order line, not today's PPTCV.
     private const string WeeklyQuery = @"
 DECLARE @from datetime = DATEADD(DAY, -@WindowDays, GETUTCDATE());
 ;WITH lines AS (
-    SELECT DATEDIFF(WEEK, '2017-01-02', d.DateAdded) AS WeekIx, d.Qty, d.BrutoPrice
+    SELECT DATEDIFF(WEEK, '2017-01-02', d.DateAdded) AS WeekIx, d.Qty, d.BrutoPrice, d.Margin
     FROM GjirafaTranslations.dbo.SR_ProductsData d
     WHERE d.ProductCode = @Sku
       AND d.OrderStatusId IN (10, 20, 30)
@@ -36,7 +38,7 @@ DECLARE @from datetime = DATEADD(DAY, -@WindowDays, GETUTCDATE());
       AND d.Qty > 0 AND d.BrutoPrice > 0
       AND d.PlatformId = @Plat AND d.CompanyId = @Comp
 )
-SELECT WeekIx, SUM(Qty) AS Units, SUM(BrutoPrice) / SUM(Qty) AS UnitPrice
+SELECT WeekIx, SUM(Qty) AS Units, SUM(BrutoPrice) / SUM(Qty) AS UnitPrice, SUM(ISNULL(Margin, 0)) AS RealizedProfit
 FROM lines
 GROUP BY WeekIx
 ORDER BY WeekIx;";
@@ -75,7 +77,8 @@ ORDER BY Yr, Mo;";
             buckets.Add(new SkuPriceBucket(
                 WeekIndex: Convert.ToInt32(reader.GetValue(0)),
                 UnitPrice: Convert.ToDecimal(reader.GetValue(2)),
-                Units: Convert.ToInt32(reader.GetValue(1))));
+                Units: Convert.ToInt32(reader.GetValue(1)),
+                RealizedProfit: Convert.ToDecimal(reader.GetValue(3))));
         }
 
         _logger.LogInformation(
