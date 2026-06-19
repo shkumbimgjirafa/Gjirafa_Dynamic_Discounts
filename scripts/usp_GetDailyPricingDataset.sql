@@ -12,8 +12,8 @@
    All sales windows are cumulative trailing windows ending at @now (UTC):
    90d ⊇ 60d ⊇ 30d ⊇ 14d ⊇ 7d.
 
-   MULTI-LAYER: the store/country filters and the vendor / unpublished toggles are now PARAMETERS,
-   mirroring SourceQueries.DailyDatasetInline. NOTE: this compiled procedure reads the GjirafaMall
+   MULTI-LAYER: the store/country filters, the WMS warehouse id and the vendor / unpublished toggles
+   are PARAMETERS, mirroring SourceQueries.DailyDatasetInline. NOTE: this compiled procedure reads the GjirafaMall
    operational database by three-part name; it CANNOT switch to GjirafaEcommerce (Gjirafa50) via a
    parameter. Gjirafa50 layers must run in InlineQuery mode (SourceDataset:Mode=InlineQuery), where
    the {opDb} token is substituted. Keep the body in sync with SourceQueries.cs.
@@ -22,13 +22,14 @@ CREATE OR ALTER PROCEDURE dbo.usp_GetDailyPricingDataset
     @StoreId              int,
     @TranslationCountryId int,
     @WarehouseStoreId     int,
+    @WmsWarehouseId       int,
     @FilterVendors        bit = 1,
     @ExcludeUnpublished   bit = 1
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    DROP TABLE IF EXISTS #vendors, #stock, #sales, #pricing;
+    DROP TABLE IF EXISTS #vendors, #stock, #sales, #pricing, #age;
 
     DECLARE @now  datetime = GETUTCDATE();   -- single timestamp for the whole dataset
     DECLARE @d7   datetime = DATEADD(DAY, -7,  @now);
@@ -101,6 +102,19 @@ BEGIN
     WHERE pp.CountryId = @TranslationCountryId;
     CREATE CLUSTERED INDEX cx ON #pricing (Sku);
 
+    -- 2c) Oldest currently-held unit per SKU in this layer's warehouse, from the WMS check-in log.
+    -- StatusId IN (2,6,7) = units physically on hand; @WmsWarehouseId selects the country warehouse
+    -- (KS=1, AL=5, MK=6). Drives the dead-stock freshness gate — a freshly received pre-order isn't
+    -- 'dead', it just arrived. LEFT-joined below, so a SKU with no check-in row leaves age NULL.
+    SELECT pci.Sku, DATEDIFF(DAY, MIN(pci.InsertDateTime), @now) AS OldestUnitAgeDays
+    INTO #age
+    FROM WarehouseManagmentSystem.dbo.ProductCheckIns pci
+    INNER JOIN #stock st ON st.Sku = pci.Sku
+    WHERE pci.StatusId IN (2, 6, 7)
+      AND pci.WarehouseId = @WmsWarehouseId
+    GROUP BY pci.Sku;
+    CREATE CLUSTERED INDEX cx ON #age (Sku);
+
     -- 3) Final dataset, one row per in-scope SKU
     SELECT
         st.Sku,
@@ -114,6 +128,7 @@ BEGIN
         st.LocalWarehouseStock,
         st.Supplier_WarehouseStock,
         st.IsNewProduct,
+        ag.OldestUnitAgeDays,
         ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],
         ISNULL(s.[14d_qty], 0) AS [14d_qty],
         ISNULL(s.[30d_qty], 0) AS [30d_qty], ISNULL(s.[30d_net], 0) AS [30d_net],
@@ -147,9 +162,10 @@ BEGIN
             ISNULL(dx.DiscountedPrice, tp.Price)     AS CurrentPrice
     ) px
     LEFT JOIN #pricing pr ON pr.Sku = st.Sku
-    LEFT JOIN #sales   s  ON s.ProductId = st.ProductId;
+    LEFT JOIN #sales   s  ON s.ProductId = st.ProductId
+    LEFT JOIN #age     ag ON ag.Sku = st.Sku;
 
-    DROP TABLE #vendors, #stock, #sales, #pricing;
+    DROP TABLE #vendors, #stock, #sales, #pricing, #age;
 END
 GO
 

@@ -48,7 +48,8 @@ public static class TestData
         decimal? elasticity = null,
         decimal vatRatePct = 18m,
         bool isNewProduct = false,
-        decimal? elasticityStdError = null)
+        decimal? elasticityStdError = null,
+        int? oldestUnitAgeDays = null)
     {
         return new SkuContext
         {
@@ -72,6 +73,7 @@ public static class TestData
             Options = options ?? new PricingEngineOptions(),
             VatRatePct = vatRatePct,
             IsNewProduct = isNewProduct,
+            OldestUnitAgeDays = oldestUnitAgeDays,
             RoundingDisabledForSku = roundingDisabledForSku,
         };
     }

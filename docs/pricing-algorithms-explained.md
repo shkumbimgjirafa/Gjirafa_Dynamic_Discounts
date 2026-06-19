@@ -124,6 +124,10 @@ its standard error**, and only SKUs with enough price variation and a trustworth
 - **Not confidently elastic, inelastic, or no trustworthy fit** → **stay silent** — left to the
   margin-tier (#6) advisor and the margin-floor guardrail.
 
+> **Deep dive (with the math and graphs):** [`algorithms/elasticity.html`](algorithms/elasticity.html) —
+> the demand model, the weekly log-log regression, the profit-max derivation `P* = cost·E/(E+1)`, the
+> markup blow-up near E=−1, and the confidence gate, all with rendered equations and live charts.
+
 ---
 
 ### 6. Margin-tier prioritization — *default weight 40*
@@ -152,9 +156,12 @@ quiet again, the markdown resumes deepening.)
 
 This is the strongest "get it moving" advisor for stuck inventory.
 
-**Silent when:** the dead stock sits *only* in supplier warehouses (none held locally). We
-don't discount stock we don't hold that isn't selling — see the supplier-stock guardrail
-below.
+**Silent when:** the dead stock sits *only* in supplier warehouses (none held locally) — we
+don't discount stock we don't hold that isn't selling (see the supplier-stock guardrail below) — **or**
+when the stock is **freshly arrived**: if the oldest unit we hold has been in the warehouse less than
+**30 days** (from the warehouse check-in log), a no-sales SKU is treated as a just-landed pre-order /
+restock that hasn't had a chance to sell, not as dead stock. (This is separate from the new-product
+hold, which only covers *platform-new* products — the age gate also catches restocks of existing SKUs.)
 
 ---
 

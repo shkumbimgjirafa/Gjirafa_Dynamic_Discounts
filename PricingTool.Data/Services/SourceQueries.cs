@@ -6,9 +6,9 @@ namespace PricingTool.Data.Services;
 ///
 /// MULTI-LAYER: the operational database is a {opDb} token (GjirafaMall / GjirafaEcommerce) that
 /// <see cref="SqlSourceDataReader"/> substitutes per layer; the cross-database GjirafaTranslations
-/// reference is shared and stays fixed. The store/country filters and the vendor / unpublished
-/// toggles are bound as command parameters (@StoreId, @TranslationCountryId, @WarehouseStoreId,
-/// @FilterVendors, @ExcludeUnpublished).
+/// and WarehouseManagmentSystem references are shared and stay fixed. The store/country filters, the
+/// WMS warehouse id and the vendor / unpublished toggles are bound as command parameters (@StoreId,
+/// @TranslationCountryId, @WarehouseStoreId, @WmsWarehouseId, @FilterVendors, @ExcludeUnpublished).
 ///
 /// SET-BASED REWRITE: the latest tier price and the best active discount are now resolved in
 /// bulk via ROW_NUMBER() into #tier / #disc, instead of per-product correlated OUTER APPLYs.
@@ -26,7 +26,7 @@ public static class SourceQueries
     public const string OperationalDbToken = "{opDb}";
 
     public const string DailyDatasetInline = @"
-DROP TABLE IF EXISTS #vendors, #stock, #sales, #pricing, #tier, #disc;
+DROP TABLE IF EXISTS #vendors, #stock, #sales, #pricing, #tier, #disc, #age;
 DECLARE @now  datetime = GETUTCDATE();
 DECLARE @d7   datetime = DATEADD(DAY, -7,  @now);
 DECLARE @d14  datetime = DATEADD(DAY, -14, @now);
@@ -94,6 +94,19 @@ INNER JOIN #stock st ON st.Sku = pp.ProductCode
 WHERE pp.CountryId = @TranslationCountryId;
 CREATE CLUSTERED INDEX cx ON #pricing (Sku);
 
+-- Oldest currently-held unit per SKU in THIS layer's warehouse, from the WMS check-in log.
+-- StatusId IN (2,6,7) = units physically on hand; @WmsWarehouseId selects the layer's country
+-- warehouse (KS=1, AL=5, MK=6). Drives the dead-stock freshness gate — a freshly received pre-order
+-- isn't 'dead', it just arrived. LEFT-joined below, so a SKU with no check-in row leaves age NULL.
+SELECT pci.Sku, DATEDIFF(DAY, MIN(pci.InsertDateTime), @now) AS OldestUnitAgeDays
+INTO #age
+FROM WarehouseManagmentSystem.dbo.ProductCheckIns pci
+INNER JOIN #stock st ON st.Sku = pci.Sku
+WHERE pci.StatusId IN (2, 6, 7)
+  AND pci.WarehouseId = @WmsWarehouseId
+GROUP BY pci.Sku;
+CREATE CLUSTERED INDEX cx ON #age (Sku);
+
 -- Latest tier price per product (StoreId = @StoreId), resolved in bulk (replaces correlated OUTER APPLY).
 SELECT t.ProductId, t.Price, t.OldPrice
 INTO #tier
@@ -143,6 +156,7 @@ SELECT
     st.LocalWarehouseStock,
     st.Supplier_WarehouseStock,
     st.IsNewProduct,
+    ag.OldestUnitAgeDays,
     ISNULL(s.[7d_qty], 0)  AS [7d_qty],  ISNULL(s.[7d_net], 0)  AS [7d_net],
     ISNULL(s.[14d_qty], 0) AS [14d_qty],
     ISNULL(s.[30d_qty], 0) AS [30d_qty], ISNULL(s.[30d_net], 0) AS [30d_net],
@@ -151,6 +165,7 @@ SELECT
 FROM #stock st
 LEFT JOIN #tier t  ON t.ProductId  = st.ProductId
 LEFT JOIN #disc dx ON dx.ProductId = st.ProductId
+LEFT JOIN #age  ag ON ag.Sku       = st.Sku
 CROSS APPLY (
     SELECT
         ISNULL(NULLIF(t.OldPrice, 0), t.Price) AS OldPrice,
@@ -159,5 +174,5 @@ CROSS APPLY (
 LEFT JOIN #pricing pr ON pr.Sku = st.Sku
 LEFT JOIN #sales   s  ON s.ProductId = st.ProductId;
 
-DROP TABLE #vendors, #stock, #sales, #pricing, #tier, #disc;";
+DROP TABLE #vendors, #stock, #sales, #pricing, #tier, #disc, #age;";
 }

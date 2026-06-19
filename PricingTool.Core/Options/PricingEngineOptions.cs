@@ -35,6 +35,14 @@ public class PricingEngineOptions
     /// </summary>
     public decimal DeadStockFloorCostFraction { get; set; } = 0.50m;
 
+    /// <summary>
+    /// Minimum age (days) of the oldest on-hand unit before a no-90d-sales SKU is treated as dead stock.
+    /// Stops freshly-received pre-orders/restocks — which legitimately have zero recent sales because they
+    /// just arrived — from being marked down before they've had a fair chance to sell. A SKU with no WMS
+    /// check-in record (unknown age) is treated as old enough, so coverage gaps keep the prior behaviour.
+    /// </summary>
+    public int DeadStockMinStockAgeDays { get; set; } = 30;
+
     /// <summary>When true the source reader is replaced by the demo data generator (no source DB needed).</summary>
     public bool UseDemoData { get; set; }
 

@@ -19,6 +19,9 @@ public record LayerSourceContext
     /// <summary>Warehouse store id for the IsLocalToStoreIds local-stock split.</summary>
     public required int WarehouseStoreId { get; init; }
 
+    /// <summary>WMS warehouse id (KS=1, AL=5, MK=6) scoping the per-SKU oldest-on-hand-unit age lookup.</summary>
+    public required int WmsWarehouseId { get; init; }
+
     /// <summary>True = restrict to the GjirafaMall vendor set; false = all vendors (Gjirafa50).</summary>
     public bool FilterVendors { get; init; } = true;
 

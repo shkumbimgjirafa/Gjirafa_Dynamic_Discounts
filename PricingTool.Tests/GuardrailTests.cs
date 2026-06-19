@@ -247,6 +247,22 @@ public class GuardrailTests
         Assert.Equal(40m, bounds.Upper);
     }
 
+    [Fact]
+    public void Clamp_FreshlyStockedDeadStock_NoTunnel_HardClampedToMarginFloor()
+    {
+        // Zero 90d sales and locally held, but the oldest unit is only 5 days old — freshly stocked, not
+        // dead. The tunnel must NOT open: a below-floor vote is clamped back up to the 62.50 margin floor.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 0, oldestUnitAgeDays: 5,
+            band: TestData.Band(marginFloorPct: 20m));
+
+        var result = _guardrails.Clamp(ctx, 40m);
+
+        Assert.Equal(62.50m, result.Price);
+        Assert.Contains(GuardrailFlags.MarginFloorClamped, result.Flags);
+        Assert.DoesNotContain(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
+    }
+
     // ---- Anchor (FinalPrice) drives the ceiling, not the display-only OldPrice -------------
 
     [Fact]

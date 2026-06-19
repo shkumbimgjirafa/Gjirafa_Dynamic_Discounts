@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELASTIC — Deep Dive (Price Elasticity, fitted)</title>
+<style>
+  :root{
+    --bg:#fbfbfa; --fg:#1c1d22; --muted:#5d6168; --faint:#8b909a;
+    --line:#e3e4e8; --card:#ffffff; --accent:#1f7a8c; --accent-2:#bf4e30;
+    --accent-3:#d98c00; --good:#2e7d4f; --bad:#c0392b; --code-bg:#f3f4f6;
+    --mathfont: "Cambria Math","Latin Modern Math",Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:40px 22px 96px}
+  header.title{border-bottom:2px solid var(--fg);padding-bottom:18px;margin-bottom:8px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
+  h1 .tag{font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:var(--accent);color:#fff;padding:5px 8px;border-radius:5px;vertical-align:middle;margin-right:10px}
+  .sub{color:var(--muted);font-size:14.5px;margin:14px 0 0}
+  .sub a{color:var(--accent);text-decoration:none;border-bottom:1px solid #b9d3da}
+  .sub a:hover{border-color:var(--accent)}
+  h2{font-size:22px;margin:54px 0 14px;padding-top:10px;letter-spacing:-.01em}
+  h2 .n{color:var(--faint);font-variant-numeric:tabular-nums;margin-right:10px;font-weight:700}
+  h3{font-size:17px;margin:32px 0 8px;color:#26303a}
+  p{margin:13px 0}
+  a{color:var(--accent)}
+  strong{color:#10141a}
+  code{font:13.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code-bg);
+    padding:1.5px 5px;border-radius:4px}
+  .lead{font-size:17px;color:#33373d}
+  blockquote{margin:18px 0;padding:12px 18px;border-left:3px solid var(--accent);
+    background:#f1f7f8;border-radius:0 8px 8px 0;color:#2b3942}
+  blockquote.read{border-left-color:var(--accent-3);background:#fbf5e9}
+  blockquote p{margin:6px 0}
+  .callout{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:14px 18px;margin:18px 0}
+  .callout.warn{border-color:#e7c9a6;background:#fdf6ec}
+  table{border-collapse:collapse;width:100%;margin:18px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:#f4f5f7;font-weight:600}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tbody tr:nth-child(even){background:#fafafa}
+  figure{margin:26px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:16px 16px 10px;overflow:hidden}
+  figure svg{display:block;width:100%;height:auto}
+  figcaption{font-size:13px;color:var(--muted);margin-top:10px;padding:0 4px}
+  figcaption b{color:#2b3942}
+  .eq{font-family:var(--mathfont);font-size:19px;text-align:center;margin:22px 0;color:#15181d;
+    overflow-x:auto;line-height:2.1}
+  .eq .lbl{float:right;color:var(--faint);font:600 12px ui-monospace,monospace;font-style:normal}
+  .frac{display:inline-flex;flex-direction:column;text-align:center;vertical-align:middle;margin:0 .25em}
+  .frac > span:first-child{border-bottom:1.4px solid currentColor;padding:0 .35em}
+  .frac > span:last-child{padding:0 .35em}
+  var{font-style:italic;font-family:var(--mathfont)}
+  .step{display:flex;gap:14px;margin:16px 0;align-items:flex-start}
+  .step .k{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-weight:700;font-size:14px;margin-top:2px}
+  .step .b{flex:1}
+  .step .b h4{margin:2px 0 4px;font-size:15.5px}
+  .pill{display:inline-block;font:600 11px ui-monospace,monospace;padding:2px 7px;border-radius:20px;
+    background:#eef2f4;color:#33484f;border:1px solid #dce6e9}
+  .pill.r{background:#fbecea;color:#9d3328;border-color:#f0cfc9}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.two{grid-template-columns:1fr}.eq{font-size:17px}}
+  hr{border:0;border-top:1px solid var(--line);margin:40px 0}
+  .toc{columns:2;column-gap:30px;font-size:14px;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:16px 22px;margin:22px 0}
+  .toc a{display:block;padding:3px 0;text-decoration:none;color:#2c3a42;break-inside:avoid}
+  .toc a:hover{color:var(--accent)}
+  .toc .nn{color:var(--faint);font-variant-numeric:tabular-nums;margin-right:8px}
+  @media(max-width:680px){.toc{columns:1}}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin:4px 0 0;padding:0 4px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:16px;height:3px;border-radius:2px;display:inline-block}
+  .legend i.dot{width:9px;height:9px;border-radius:50%}
+  .kbd{font:12px ui-monospace,monospace;background:#eceef0;border:1px solid #d8dade;border-bottom-width:2px;
+    border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="title">
+  <h1><span class="tag">ELASTIC</span>Price Elasticity (fitted) — Deep Dive</h1>
+  <p class="sub">
+    Companion to <a href="../pricing-algorithms-explained.md">pricing-algorithms-explained.md</a>,
+    and a sibling of <a href="sell-through.md">sell-through.md</a>,
+    <a href="dead-stock.md">dead-stock.md</a> and <a href="margin-tier.md">margin-tier.md</a>.
+    Where those explain their advisor in prose, this one is built on <em>curves</em> — so it's an HTML page
+    with rendered math and live SVG charts. It covers Algorithm&nbsp;5 end to end: the demand model, the
+    weekly regression that fits it, the profit-maximisation that turns a slope into a price, the two gates
+    that decide whether we're allowed to act, and worked examples. <strong>Default weight: 80.</strong>
+  </p>
+</header>
+
+<nav class="toc">
+  <a href="#s1"><span class="nn">1</span>What this advisor is for</a>
+  <a href="#s2"><span class="nn">2</span>The demand model</a>
+  <a href="#s3"><span class="nn">3</span>Fitting it: log-log OLS</a>
+  <a href="#s4"><span class="nn">4</span>The data pipeline</a>
+  <a href="#s5"><span class="nn">5</span>The usability gate</a>
+  <a href="#s6"><span class="nn">6</span>From slope to price: profit-max</a>
+  <a href="#s7"><span class="nn">7</span>The markup blow-up near E=−1</a>
+  <a href="#s8"><span class="nn">8</span>The confidence gate</a>
+  <a href="#s9"><span class="nn">9</span>The vote it casts</a>
+  <a href="#s10"><span class="nn">10</span>From a vote to a price</a>
+  <a href="#s11"><span class="nn">11</span>Worked examples</a>
+  <a href="#s12"><span class="nn">12</span>Gotchas</a>
+</nav>
+
+<!-- ============================================================ 1 -->
+<h2 id="s1"><span class="n">1</span>What this advisor is for</h2>
+<p class="lead">Elasticity answers the one question none of the other advisors can:</p>
+<blockquote><p><strong>"When we move this product's price, does demand actually respond — and if it does,
+what single price earns us the most profit?"</strong></p></blockquote>
+<p>
+Sell-through reasons about <em>inventory clearing</em>; margin-tier about <em>headroom</em>; dead-stock about
+<em>frozen stock</em>. None of them looks at the <em>shape of the demand curve</em>. Elasticity does — and only
+elasticity. It owns one orthogonal lane: <strong>the price-responsiveness lane.</strong> It reads a per-SKU
+elasticity coefficient that was <strong>fitted weekly from years of real transaction history</strong>, and,
+<em>only when it is statistically confident demand is genuinely elastic,</em> votes the textbook
+profit-maximising price.
+</p>
+<p>
+It is deliberately conservative about <em>when</em> it speaks. A fitted coefficient is a noisy estimate; acting on
+a wrong one can swing a price hard in the wrong direction. So elasticity stays silent on inelastic SKUs,
+unfitted SKUs, cost-less SKUs, and — crucially — on <em>noisy</em> fits that only <em>look</em> elastic
+(§8). When it does vote, weight 80 makes it one of the loudest voices in the blend, so the bar to speak is high.
+</p>
+
+<!-- ============================================================ 2 -->
+<h2 id="s2"><span class="n">2</span>The demand model: constant elasticity</h2>
+<p>
+"Price elasticity of demand" <var>E</var> is the percentage change in units sold for a 1&nbsp;% change in price.
+If a 1&nbsp;% price rise drops volume by 2&nbsp;%, then <var>E</var>&nbsp;=&nbsp;−2. Because demand falls as price
+rises, <var>E</var> is always negative. We model demand with the <strong>constant-elasticity</strong> form — the
+standard workhorse, because it makes that "% for %" relationship hold at <em>every</em> price:
+</p>
+<div class="eq"><span class="lbl">(1)</span>
+  <var>Q</var>(<var>P</var>) &nbsp;=&nbsp; <var>A</var>&middot;<var>P</var><sup>&#8201;<var>E</var></sup>
+  &nbsp;,&nbsp;&nbsp; <var>E</var> &lt; 0
+</div>
+<p>
+<var>Q</var> is units, <var>P</var> is price, <var>A</var> is a scale factor (overall popularity). The magnitude
+of <var>E</var> is the whole story:
+</p>
+<table>
+  <thead><tr><th>Region</th><th>Coefficient</th><th>Meaning</th><th>What it implies for price</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Inelastic</strong></td><td class="num">−1 &lt; E &lt; 0</td><td>Volume barely reacts to price</td><td>Revenue rises as you raise price → no interior profit peak. <span class="pill">Algo 5 silent</span></td></tr>
+    <tr><td><strong>Unit-elastic</strong></td><td class="num">E = −1</td><td>% drop in volume = % rise in price</td><td>Revenue flat; profit formula degenerate. <span class="pill">Algo 5 silent</span></td></tr>
+    <tr><td><strong>Elastic</strong></td><td class="num">E &lt; −1</td><td>Volume reacts more than proportionally</td><td>A finite profit-max price <var>P</var>* exists (§6). <span class="pill r">Algo 5 acts</span></td></tr>
+  </tbody>
+</table>
+
+<figure>
+  <svg id="fig-demand" viewBox="0 0 660 360" role="img" aria-label="Demand curves at different elasticities"></svg>
+  <div class="legend">
+    <span><i style="background:#9aa0a8"></i>E=−0.5 (inelastic)</span>
+    <span><i style="background:#1f7a8c"></i>E=−1 (unit)</span>
+    <span><i style="background:#d98c00"></i>E=−2 (elastic)</span>
+    <span><i style="background:#bf4e30"></i>E=−4 (very elastic)</span>
+  </div>
+  <figcaption><b>Constant-elasticity demand curves</b>, all pinned to the same point (P=10, Q=100). The more
+  negative <var>E</var> is, the more sharply volume collapses as price rises — and the steeper the incentive to
+  <em>cut</em> price to win volume.</figcaption>
+</figure>
+
+<p>
+The reason we use this form is that it becomes a <strong>straight line in log space</strong>. Take logs of (1):
+</p>
+<div class="eq"><span class="lbl">(2)</span>
+  ln&#8201;<var>Q</var> &nbsp;=&nbsp; ln&#8201;<var>A</var> &nbsp;+&nbsp; <var>E</var>&middot;ln&#8201;<var>P</var>
+</div>
+<p>
+This is <code>y = intercept + slope&middot;x</code> with <var>x</var>&nbsp;=&nbsp;ln&#8201;<var>P</var>,
+<var>y</var>&nbsp;=&nbsp;ln&#8201;<var>Q</var>. <strong>The slope <em>is</em> the elasticity <var>E</var>.</strong> So
+fitting elasticity reduces to fitting a single straight line through (ln&nbsp;price, ln&nbsp;units) points — the
+same curves above, but now perfectly straight, their slope equal to <var>E</var>:
+</p>
+
+<figure>
+  <svg id="fig-loglog" viewBox="0 0 660 360" role="img" aria-label="The same demand curves in log-log space"></svg>
+  <figcaption><b>The same four curves in log-log space.</b> Curved demand becomes straight lines; each line's
+  slope is exactly its <var>E</var>. This linearity is why a plain linear regression recovers the elasticity.</figcaption>
+</figure>
+
+<!-- ============================================================ 3 -->
+<h2 id="s3"><span class="n">3</span>Fitting it: log-log ordinary least squares</h2>
+<p>
+We never observe the true curve — only scattered weekly observations of "this many units sold at roughly this
+price." We fit the line (2) by <strong>ordinary least squares (OLS)</strong>: choose the slope and intercept that
+minimise the sum of squared vertical gaps between the data and the line. The closed-form solution
+(<code>OlsRegression.cs</code>) for <var>n</var> points is:
+</p>
+<div class="eq"><span class="lbl">(3)</span>
+  <var>E&#770;</var> &nbsp;=&nbsp; slope &nbsp;=&nbsp;
+  <span class="frac">
+    <span>&Sigma;(<var>x</var><sub>i</sub>&minus;<var>x&#772;</var>)(<var>y</var><sub>i</sub>&minus;<var>y&#772;</var>)</span>
+    <span>&Sigma;(<var>x</var><sub>i</sub>&minus;<var>x&#772;</var>)<sup>2</sup></span>
+  </span>
+  &nbsp;=&nbsp;
+  <span class="frac"><span><var>S</var><sub>xy</sub></span><span><var>S</var><sub>xx</sub></span></span>
+  &nbsp;,&nbsp;&nbsp;
+  intercept &nbsp;=&nbsp; <var>y&#772;</var> &minus; <var>E&#770;</var>&middot;<var>x&#772;</var>
+</div>
+<p>
+We also need to know how <em>trustworthy</em> the slope is. Two diagnostics do that work:
+</p>
+<div class="eq"><span class="lbl">(4)</span>
+  <var>R</var><sup>2</sup> &nbsp;=&nbsp;
+  <span class="frac"><span><var>S</var><sub>xy</sub><sup>&#8201;2</sup></span><span><var>S</var><sub>xx</sub>&middot;<var>S</var><sub>yy</sub></span></span>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  SE(<var>E&#770;</var>) &nbsp;=&nbsp;
+  <span style="font-size:24px">&radic;</span><span style="border-top:1.4px solid;padding-top:2px">
+  <span class="frac"><span>SSE&#8201;/&#8201;(<var>n</var>&minus;2)</span><span><var>S</var><sub>xx</sub></span></span></span>
+  &nbsp;,&nbsp;&nbsp; SSE = <var>S</var><sub>yy</sub> &minus; <var>E&#770;</var>&middot;<var>S</var><sub>xy</sub>
+</div>
+<p>
+where <var>S</var><sub>xx</sub>, <var>S</var><sub>yy</sub>, <var>S</var><sub>xy</sub> are the
+<em>centred</em> sums of squares and cross-products. <var>R</var><sup>2</sup> (0–1) says how much of the
+variation in log-units the price line explains; <strong>SE</strong> is the standard error of the slope — the
+&plusmn; band on our estimate of <var>E</var>, and the linchpin of the confidence gate (§8). With fewer than 3
+points there are no residual degrees of freedom, so SE is <span class="pill">∞</span> and the fit is never
+trusted.
+</p>
+
+<figure>
+  <svg id="fig-scatter" viewBox="0 0 660 380" role="img" aria-label="Scatter of weekly observations with the fitted line"></svg>
+  <figcaption><b>A worked fit.</b> Each dot is one weekly bucket: ln(realised unit price) on x, ln(units) on y.
+  The thick line is the OLS fit; thin grey stems are the residuals OLS minimises. The slope of that line is the
+  fitted elasticity <var>E&#770;</var>, shown with its <var>R</var><sup>2</sup> and standard error (computed live
+  from the points by the same formulas the engine uses).</figcaption>
+</figure>
+
+<!-- ============================================================ 4 -->
+<h2 id="s4"><span class="n">4</span>The data pipeline (how the points are built)</h2>
+<p>
+The fit runs <strong>weekly per (layer, SKU)</strong> in <code>ElasticityFitService</code>, over a trailing
+<strong>365-day window</strong> (one full seasonal cycle of price points). The raw fact table is
+<code>SR_ProductsData</code> (order lines). The expensive aggregation is done <strong>set-based in SQL</strong>
+(<code>SqlElasticitySourceReader</code>) so only <em>one tiny row per SKU</em> ever comes back to C#:
+</p>
+<table>
+  <thead><tr><th>Stage</th><th>What happens</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Filter</strong></td><td>Valid order lines only: <code>OrderStatusId ∈ (10,20,30)</code>, <code>Qty&gt;0</code>, <code>BrutoPrice&gt;0</code>, scoped to the layer's <code>(PlatformId, CompanyId)</code></td><td>Cancelled/returned lines aren't demand.</td></tr>
+    <tr><td><strong>Bucket by ISO week</strong></td><td>Group lines into weekly buckets; <code>Units = Σ Qty</code>, <code>UnitPrice = Σ BrutoPrice ÷ Σ Qty</code> (a volume-weighted realised price)</td><td>Denoises intermittent daily demand; one (price, units) point per week.</td></tr>
+    <tr><td><strong>Log &amp; sum</strong></td><td>In SQL: <code>Σ ln P, Σ ln Q, Σ ln²P, Σ ln²Q, Σ lnP·lnQ</code>, plus N, distinct prices, min/max/avg/stdev price</td><td>Those five sums are <em>everything</em> formulas (3)–(4) need — no need to ship every bucket.</td></tr>
+    <tr><td><strong>Fit in C#</strong></td><td><code>OlsRegression.FromSums(…)</code> turns the sums into slope, intercept, <var>R</var><sup>2</sup>, SE</td><td>Tiny arithmetic; the heavy lifting already happened in the DB.</td></tr>
+    <tr><td><strong>Gate &amp; store</strong></td><td>Apply the usability gate (§5); delete-then-bulk-insert the layer's rows in <code>SkuElasticity</code>; stamp <code>LastElasticityFitUtc</code></td><td>Idempotent refresh; usable rows feed the pricing run, non-usable kept for diagnostics.</td></tr>
+  </tbody>
+</table>
+<div class="callout">
+  <strong>Realised price, not list price.</strong> The x-axis is <code>Σ BrutoPrice ÷ Σ Qty</code> — what customers
+  <em>actually paid</em> that week (VAT-inclusive, weighted by volume), including whatever discount was live. That
+  is the price the demand actually responded to, which is exactly what an elasticity needs.
+</div>
+
+<!-- ============================================================ 5 -->
+<h2 id="s5"><span class="n">5</span>The usability gate (is the fit even real?)</h2>
+<p>
+A slope can be computed from almost anything; that doesn't make it <em>meaningful</em>. Before a coefficient is
+ever stored as <code>IsUsable</code>, <code>ElasticityGate.IsUsable</code> requires <strong>all</strong> of these —
+a mix of <em>fit-quality</em> and <em>economic-plausibility</em> tests:
+</p>
+<table>
+  <thead><tr><th>Gate</th><th>Threshold</th><th>Rejects…</th></tr></thead>
+  <tbody>
+    <tr><td>Enough observations</td><td class="num">N ≥ 8 weeks</td><td>SKUs with too little history to fit a line.</td></tr>
+    <tr><td>Enough distinct prices</td><td class="num">≥ 4</td><td>SKUs whose price never really moved — nothing to regress against.</td></tr>
+    <tr><td>Real price spread</td><td class="num">max/min ≥ 1.05</td><td>Prices that wobbled &lt;5&nbsp;% — too little leverage to identify a slope.</td></tr>
+    <tr><td>Fit explains variation</td><td class="num">R² ≥ 0.20</td><td>Scatter with no real price→volume relationship.</td></tr>
+    <tr><td>Right sign &amp; not noise</td><td class="num">−8 &lt; E &lt; −0.05</td><td>Positive slopes (wrong sign), near-zero noise, and absurdly steep collinear artifacts.</td></tr>
+  </tbody>
+</table>
+<blockquote class="read"><p>
+A <strong>usable</strong> coefficient may still be <strong>inelastic</strong> (e.g. E=−0.5). The gate keeps it for
+analysis — but Algorithm&nbsp;5 acts only on the <em>elastic</em> ones (§6), and even then only the
+<em>confident</em> ones (§8). "Usable" and "acted on" are two different bars.
+</p></blockquote>
+
+<!-- ============================================================ 6 -->
+<h2 id="s6"><span class="n">6</span>From a slope to a price: profit maximisation</h2>
+<p>
+A confident elastic slope tells us the demand curve's shape. Now we pick the price on it that earns the most
+profit. Per-unit profit is <code>(P − c)</code> where <var>c</var> is cost (PPTCV, the all-in VAT-inclusive landed
+cost), and we sell <var>Q</var>(<var>P</var>) units, so total profit is:
+</p>
+<div class="eq"><span class="lbl">(5)</span>
+  &pi;(<var>P</var>) &nbsp;=&nbsp; (<var>P</var> &minus; <var>c</var>)&middot;<var>Q</var>(<var>P</var>)
+  &nbsp;=&nbsp; (<var>P</var> &minus; <var>c</var>)&middot;<var>A</var>&middot;<var>P</var><sup>&#8201;<var>E</var></sup>
+</div>
+<p>Differentiate and set to zero. Factor out <var>A</var>&middot;<var>P</var><sup><var>E</var>&minus;1</sup>:</p>
+<div class="eq"><span class="lbl">(6)</span>
+  <span class="frac"><span>d&pi;</span><span>d<var>P</var></span></span>
+  &nbsp;=&nbsp; <var>A</var>&middot;<var>P</var><sup>&#8201;<var>E</var>&minus;1</sup>
+  <big>[</big>&#8201;<var>P</var>(1+<var>E</var>) &minus; <var>E&#8201;c</var>&#8201;<big>]</big> &nbsp;=&nbsp; 0
+  &nbsp;&nbsp;&rArr;&nbsp;&nbsp; <var>P</var>(1+<var>E</var>) = <var>E&#8201;c</var>
+</div>
+<p>Solve for <var>P</var> and you get the profit-maximising price the algorithm votes:</p>
+<div class="eq" style="font-size:23px"><span class="lbl">(7)</span>
+  <var>P</var>* &nbsp;=&nbsp; <var>c</var> &middot;
+  <span class="frac"><span><var>E</var></span><span><var>E</var>+1</span></span>
+  &nbsp;=&nbsp; <var>c</var> &middot; <var>m</var>(<var>E</var>)
+</div>
+<p>
+The factor <var>m</var>(<var>E</var>)&nbsp;=&nbsp;<var>E</var>/(<var>E</var>+1) is the <strong>optimal markup over
+cost</strong>. For elastic demand (<var>E</var>&nbsp;&lt;&nbsp;−1) both <var>E</var> and <var>E</var>+1 are
+negative, so <var>m</var>&nbsp;&gt;&nbsp;1 and <var>P</var>* is a sensible price above cost. Two things to notice:
+</p>
+<ul>
+  <li><strong>More elastic → price nearer cost.</strong> As <var>E</var>→−∞, <var>m</var>→1, so <var>P</var>*→cost:
+    very price-sensitive demand is best served by a thin margin and high volume.</li>
+  <li><strong>This is a maximum only for E&lt;−1.</strong> For inelastic demand (−1&lt;E&lt;0), equation (5) is
+    monotonically <em>increasing</em> in <var>P</var> — there's no interior peak, profit just keeps rising with
+    price. That's the formal reason elasticity <em>abstains</em> on inelastic SKUs and leaves them to the
+    margin-tier advisor and the anchor cap.</li>
+</ul>
+
+<figure>
+  <svg id="fig-profit" viewBox="0 0 660 380" role="img" aria-label="Profit as a function of price, with the optimum marked"></svg>
+  <figcaption><b>The profit hump.</b> Profit &pi;(P) for a SKU with cost €12 and E=−2.4. Below cost you lose money;
+  raise price and profit climbs, peaks at <var>P</var>*&nbsp;=&nbsp;12&middot;(−2.4/−1.4)&nbsp;=&nbsp;<b>€20.57</b>,
+  then falls as volume bleeds away. The engine votes that peak — then caps it at the anchor and clamps it to the
+  margin floor (§10).</figcaption>
+</figure>
+
+<!-- ============================================================ 7 -->
+<h2 id="s7"><span class="n">7</span>The markup blow-up near E = −1</h2>
+<p>
+Equation (7) hides a trap. As <var>E</var> approaches −1 from below, the denominator <var>E</var>+1 approaches 0,
+so the markup <var>m</var>(<var>E</var>) <strong>explodes toward infinity</strong>:
+</p>
+<div class="eq"><span class="lbl">(8)</span>
+  <var>m</var>(−2) = <span class="frac"><span>−2</span><span>−1</span></span> = 2&times; &nbsp;&nbsp;|&nbsp;&nbsp;
+  <var>m</var>(−1.5) = <span class="frac"><span>−1.5</span><span>−0.5</span></span> = 3&times; &nbsp;&nbsp;|&nbsp;&nbsp;
+  <var>m</var>(−1.18) = <span class="frac"><span>−1.18</span><span>−0.18</span></span> &asymp; 6.6&times; &nbsp;&nbsp;|&nbsp;&nbsp;
+  <var>m</var>(−1.05) &asymp; 21&times;
+</div>
+
+<figure>
+  <svg id="fig-markup" viewBox="0 0 660 360" role="img" aria-label="Optimal markup as a function of elasticity, exploding near E=-1"></svg>
+  <figcaption><b>Why a noisy near-unit fit is dangerous.</b> The optimal markup <var>m</var>(E) = E/(E+1). Out in
+  the genuinely-elastic region it's tame (≈1–2&times;); but just left of <var>E</var>=−1 it shoots vertical. A fit of
+  −1.18 is barely distinguishable from −1.05 given normal noise — yet they imply a 6.6&times; vs 21&times; markup.
+  Acting on the point estimate alone would be reckless, which is exactly what §8 prevents.</figcaption>
+</figure>
+
+<!-- ============================================================ 8 -->
+<h2 id="s8"><span class="n">8</span>The confidence gate (when are we <em>allowed</em> to act?)</h2>
+<p>
+Because of the blow-up, it isn't enough that the <em>point estimate</em> <var>E&#770;</var> is below −1. We require
+that we're <strong>statistically confident the true E is below −1</strong> — even the optimistic
+(closest-to-zero) end of a one-sided 95&nbsp;% confidence interval must clear −1
+(<code>ElasticityGate.IsConfidentlyElastic</code>):
+</p>
+<div class="eq" style="font-size:22px"><span class="lbl">(9)</span>
+  <var>E&#770;</var> &nbsp;+&nbsp; <var>z</var>&middot;SE(<var>E&#770;</var>) &nbsp;&le;&nbsp; −1
+  &nbsp;,&nbsp;&nbsp; <var>z</var> = 1.645&nbsp; (one-sided 95&#8201;%)
+</div>
+<p>
+In words: take the fitted slope, walk <strong>1.645 standard errors toward zero</strong> (the least-elastic the
+data plausibly allows), and only act if you're <em>still</em> at or below −1. A non-finite SE (too few points) can
+never satisfy this, so it's never confident.
+</p>
+
+<figure>
+  <svg id="fig-ci" viewBox="0 0 660 360" role="img" aria-label="Two fits and the confidence threshold at E=-1"></svg>
+  <figcaption><b>The gate in action.</b> Each bell is the sampling distribution of a fitted <var>E&#770;</var>.
+  <span style="color:#2e7d4f"><b>SKU A</b></span> (E&#770;=−2.4, SE=0.5): its upper one-sided bound −2.4+1.645&middot;0.5
+  = <b>−1.58 ≤ −1</b> → <b>confident, acts.</b>
+  <span style="color:#c0392b"><b>SKU B</b></span> (E&#770;=−1.18, SE=0.40): upper bound −1.18+1.645&middot;0.40
+  = <b>−0.52 &gt; −1</b> → too much mass to the right of −1 → <b>not confident, stays silent.</b> The dashed line is
+  the −1 threshold.</figcaption>
+</figure>
+<div class="callout warn">
+  <strong>Two distinct elastic bars.</strong> <code>IsElastic(E)</code> = <code>E &lt; −1</code> (the point estimate)
+  decides what's <em>labelled</em> elastic for analysis. <code>IsConfidentlyElastic(E, SE)</code> = equation (9)
+  decides what Algorithm&nbsp;5 is allowed to <em>act</em> on. The second is strictly stronger — it's what saves us
+  from the §7 blow-up.
+</div>
+
+<!-- ============================================================ 9 -->
+<h2 id="s9"><span class="n">9</span>The vote it casts</h2>
+<p>Once a SKU passes both the usability gate (§5) and the confidence gate (§8), the algorithm emits exactly one vote:</p>
+<div class="step"><div class="k">1</div><div class="b"><h4>Suggested price</h4>
+  <code>optimal = min( cost &times; E/(E+1), anchor )</code> — the profit-max price <var>P</var>* from (7),
+  <strong>capped at the anchor</strong> (FinalPrice). The engine never proposes above the reference price, and the
+  cap also tames the residual markup near E=−1 that survives the confidence gate.</div></div>
+<div class="step"><div class="k">2</div><div class="b"><h4>Confidence</h4>
+  <code>confidence = min( 0.75, 0.45 + (|E| − 1)/4 )</code> — rises with how elastic the SKU is, from 0.45 at the
+  unit-elastic edge up to a 0.75 ceiling (e.g. E=−2 → 0.70; E=−3 and beyond → 0.75). More elastic = more conviction.</div></div>
+<div class="step"><div class="k">3</div><div class="b"><h4>Reason code</h4>
+  Always <span class="pill">ELASTIC_OPTIMAL</span>, with text naming the fitted E, its SE, the markup, the proposed
+  price and the direction (↑/↓) from today's price.</div></div>
+
+<!-- ============================================================ 10 -->
+<h2 id="s10"><span class="n">10</span>From a vote to a price</h2>
+<p>Elasticity produces <strong>one vote</strong>. Like every advisor it is then blended, clamped and rounded:</p>
+<div class="step"><div class="k">1</div><div class="b"><h4>Blend</h4>
+  Weighted average of all advisors' votes, each vote's pull = <code>band weight × confidence</code>. At weight
+  <strong>80</strong> and confidence up to 0.75, elasticity's effective pull (up to ~60) is the heaviest in the
+  engine — when it speaks, it usually leads the blend.</div></div>
+<div class="step"><div class="k">2</div><div class="b"><h4>Clamp to [margin floor, anchor]</h4>
+  The blended price is bounded below by the band's margin-floor price <code>cost ÷ (1 − floor%)</code> and above by
+  the anchor. <strong>Elasticity gets no tunnel exception</strong> — unlike <a href="dead-stock.md">dead stock</a>,
+  a profit-max price that lands below the floor is clamped right back up to it.</div></div>
+<div class="step"><div class="k">3</div><div class="b"><h4>Round</h4>
+  Snap to the band's psychological grid (e.g. <code>.99</code>), but only if rounding stays inside the
+  guardrails.</div></div>
+
+<!-- ============================================================ 11 -->
+<h2 id="s11"><span class="n">11</span>Worked examples</h2>
+<p>
+Three illustrative SKUs (Band&nbsp;2, €10–50, 13&nbsp;% margin floor) that exercise the three outcomes: a clean
+elastic cut, the confidence gate firing, and the anchor cap. All arithmetic is shown.
+</p>
+
+<h3>Example A — confidently elastic, profit-max cuts the price</h3>
+<table>
+  <thead><tr><th>Fact</th><th class="num">Value</th></tr></thead>
+  <tbody>
+    <tr><td>Cost (PPTCV) / Anchor / Current</td><td class="num">€12.00 / €34.99 / €29.99</td></tr>
+    <tr><td>Fitted E ± SE</td><td class="num">−2.40 ± 0.50</td></tr>
+    <tr><td>Band margin floor</td><td class="num">13% (→ €13.79)</td></tr>
+  </tbody>
+</table>
+<p><strong>The algorithm's reasoning</strong></p>
+<ul>
+  <li><strong>Confidence gate:</strong> −2.40 + 1.645&middot;0.50 = <strong>−1.58 ≤ −1</strong> → confident ✓.</li>
+  <li><strong>Markup:</strong> <code>E/(E+1) = −2.40 / −1.40 = ×1.714</code>.</li>
+  <li><strong>P*:</strong> <code>12.00 × 1.714 = €20.57</code>; below the €34.99 anchor, so no cap → optimal €20.57.</li>
+  <li><strong>Confidence value:</strong> <code>min(0.75, 0.45 + (2.40−1)/4) = min(0.75, 0.80) = 0.75</code>; arrow ↓ from €29.99.</li>
+</ul>
+<p><strong>The rest of the chain</strong></p>
+<ul>
+  <li>Lone voter → raw blended price = <strong>€20.57</strong>.</li>
+  <li>Margin floor = <code>12.00 ÷ 0.87 = €13.79</code>; €20.57 sits inside [13.79, 34.99] → no clamp.</li>
+  <li>Rounding (band 2 <code>.99</code>, €1 grid): candidates 19.99 / 20.99 → <strong>20.99</strong> is closer.</li>
+  <li><strong>Final = €20.99 (−30.0% vs €29.99).</strong> Margin there ≈ 42.8% — fat, by design: elastic demand
+    rewards a lower price with enough extra volume to maximise total profit.</li>
+</ul>
+<blockquote class="read"><p><b>Read:</b> the textbook case. A genuinely price-responsive SKU is being sold too
+high; elasticity pulls it down to the profit peak and, as the heaviest voter, the blend follows.</p></blockquote>
+
+<h3>Example B — looks elastic, but the gate keeps it silent</h3>
+<table>
+  <thead><tr><th>Fact</th><th class="num">Value</th></tr></thead>
+  <tbody>
+    <tr><td>Cost (PPTCV) / Anchor / Current</td><td class="num">€12.00 / €34.99 / €29.99</td></tr>
+    <tr><td>Fitted E ± SE</td><td class="num">−1.18 ± 0.40</td></tr>
+  </tbody>
+</table>
+<p><strong>The algorithm's reasoning</strong></p>
+<ul>
+  <li>Point estimate −1.18 <em>is</em> below −1, so it's labelled elastic — but the confidence gate:
+    −1.18 + 1.645&middot;0.40 = <strong>−0.52 &gt; −1</strong> → <strong>not confident</strong>.</li>
+  <li>So the algorithm is <strong>silent</strong>. No vote.</li>
+  <li><em>Had it acted</em>, the markup would have been <code>−1.18/−0.18 = ×6.56</code> → P* = 12.00 × 6.56 =
+    €78.74, instantly jammed up to the €34.99 anchor — a 17% price <em>hike</em> off a noisy fit. The §7 blow-up,
+    avoided.</li>
+</ul>
+<p><strong>The rest of the chain:</strong> with elasticity silent, the price is decided by the other advisors and
+the margin-floor guardrail. The current €29.99 likely stands or is gently nudged by margin-tier.</p>
+<blockquote class="read"><p><b>Read:</b> the gate earning its keep. The same point estimate that would have triggered
+a wild markup is recognised as too noisy to trust, and elasticity steps aside.</p></blockquote>
+
+<h3>Example C — confidently elastic, but P* is above the anchor → capped</h3>
+<table>
+  <thead><tr><th>Fact</th><th class="num">Value</th></tr></thead>
+  <tbody>
+    <tr><td>Cost (PPTCV) / Anchor / Current</td><td class="num">€30.00 / €34.99 / €31.99</td></tr>
+    <tr><td>Fitted E ± SE</td><td class="num">−5.00 ± 0.30</td></tr>
+  </tbody>
+</table>
+<p><strong>The algorithm's reasoning</strong></p>
+<ul>
+  <li><strong>Confidence gate:</strong> −5.00 + 1.645&middot;0.30 = <strong>−4.51 ≤ −1</strong> → confident ✓.</li>
+  <li><strong>Markup:</strong> <code>−5.00 / −4.00 = ×1.25</code> — very elastic ⇒ a thin markup near cost.</li>
+  <li><strong>P*:</strong> <code>30.00 × 1.25 = €37.50</code>; this is <em>above</em> the €34.99 anchor →
+    <code>min(37.50, 34.99)</code> = <strong>capped at €34.99</strong>.</li>
+  <li><strong>Confidence value:</strong> <code>min(0.75, 0.45 + (5−1)/4) = min(0.75, 1.45) = 0.75</code>; arrow ↑ from €31.99.</li>
+</ul>
+<p><strong>The rest of the chain</strong></p>
+<ul>
+  <li>Lone voter → raw = €34.99 (the cap). Margin floor = <code>30 ÷ 0.87 = €34.48</code>; €34.99 inside
+    [34.48, 34.99].</li>
+  <li>Rounding: already at the anchor's <code>.99</code> → <strong>Final = €34.99 (+9.4% vs €31.99)</strong>:
+    elasticity wants the discount <em>removed</em>, the anchor cap is what stops it asking for more.</li>
+</ul>
+<blockquote class="read"><p><b>Read:</b> the anchor cap as the second safety rail. Even a clean, confident fit can
+imply a price above the reference; the engine never proposes increases beyond the anchor, so P* is trimmed to
+it.</p></blockquote>
+
+<!-- ============================================================ 12 -->
+<h2 id="s12"><span class="n">12</span>Gotchas &amp; things to remember</h2>
+<ul>
+  <li><strong>The slope <em>is</em> the elasticity</strong> — that's the whole reason we regress in log-log space
+    (eq. 2). No transformation needed afterwards.</li>
+  <li><strong>"Usable" ≠ "acted on."</strong> The §5 gate stores well-fit coefficients including inelastic ones;
+    Algorithm 5 acts only on the <em>confidently elastic</em> subset (§8).</li>
+  <li><strong>Confidence is about the interval, not the point.</strong> A point estimate below −1 is not enough —
+    <code>E + 1.645·SE ≤ −1</code> must hold, or the near-unit markup blow-up (§7) makes the vote reckless.</li>
+  <li><strong>No SE → never acts.</strong> Fewer than 3 points gives an infinite standard error; the confidence
+    gate treats that as never-confident.</li>
+  <li><strong>P* is capped at the anchor and clamped to the margin floor.</strong> Elasticity gets <em>no</em>
+    tunnel — only <a href="dead-stock.md">dead stock</a> may pierce the floor.</li>
+  <li><strong>Realised, volume-weighted, VAT-inclusive price drives the fit</strong> (Σ BrutoPrice ÷ Σ Qty per
+    week), and cost is PPTCV (also VAT-inclusive) — so <var>P</var>* is already a shelf price, no VAT step.</li>
+  <li><strong>Weekly buckets, 365-day window, refit weekly.</strong> Intermittent daily demand is denoised into
+    weeks; a year captures a full seasonal cycle of price points.</li>
+  <li><strong>Inelastic SKUs have no interior profit peak</strong> — that's the formal reason elasticity abstains on
+    them rather than a heuristic choice.</li>
+</ul>
+
+<hr>
+<p style="color:var(--faint);font-size:13px">
+Sources: <code>PriceElasticityHeuristicAlgorithm.cs</code>, <code>ElasticityGate.cs</code>,
+<code>OlsRegression.cs</code>, <code>ElasticityFitService.cs</code>, <code>SqlElasticitySourceReader.cs</code>.
+Worked examples are illustrative (Band 2, 13&nbsp;% floor) and computed with the exact formulas above. Charts are
+drawn live from the formulas — open this file in any browser.
+</p>
+
+</div>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+function E(tag,attrs,kids){const e=document.createElementNS(NS,tag);
+  for(const k in attrs)e.setAttribute(k,attrs[k]);
+  if(kids)for(const c of[].concat(kids))e.appendChild(typeof c==="string"?document.createTextNode(c):c);
+  return e;}
+function txt(x,y,s,attrs){return E("text",Object.assign({x,y},attrs||{}),s);}
+
+// Generic plotter: maps data->pixels, draws axes + ticks + labels.
+function Plot(svg,W,H,dom,labels,opts){
+  opts=opts||{};
+  const m={l:opts.ml||56,r:opts.mr||22,t:opts.mt||20,b:opts.mb||46};
+  const [x0,x1,y0,y1]=dom;
+  const px=x=>m.l+(x-x0)/(x1-x0)*(W-m.l-m.r);
+  const py=y=>H-m.b-(y-y0)/(y1-y0)*(H-m.t-m.b);
+  // plot frame
+  svg.appendChild(E("rect",{x:m.l,y:m.t,width:W-m.l-m.r,height:H-m.t-m.b,fill:"#fff",stroke:"none"}));
+  // gridlines + ticks
+  const xt=opts.xticks||niceTicks(x0,x1,6), yt=opts.yticks||niceTicks(y0,y1,6);
+  for(const t of xt){const X=px(t);
+    svg.appendChild(E("line",{x1:X,y1:m.t,x2:X,y2:H-m.b,stroke:"#eef0f2"}));
+    svg.appendChild(txt(X,H-m.b+18,(opts.xfmt||fmt)(t),{"text-anchor":"middle","font-size":11,fill:"#7a7f87"}));}
+  for(const t of yt){const Y=py(t);
+    svg.appendChild(E("line",{x1:m.l,y1:Y,x2:W-m.r,y2:Y,stroke:"#eef0f2"}));
+    svg.appendChild(txt(m.l-8,Y+4,(opts.yfmt||fmt)(t),{"text-anchor":"end","font-size":11,fill:"#7a7f87"}));}
+  // axis lines
+  svg.appendChild(E("line",{x1:m.l,y1:H-m.b,x2:W-m.r,y2:H-m.b,stroke:"#b9bdc4"}));
+  svg.appendChild(E("line",{x1:m.l,y1:m.t,x2:m.l,y2:H-m.b,stroke:"#b9bdc4"}));
+  // axis titles
+  svg.appendChild(txt((m.l+W-m.r)/2,H-8,labels[0],{"text-anchor":"middle","font-size":12.5,fill:"#3a3f47","font-weight":600}));
+  svg.appendChild(txt(0,0,labels[1],{"text-anchor":"middle","font-size":12.5,fill:"#3a3f47","font-weight":600,
+    transform:`translate(15,${(m.t+H-m.b)/2}) rotate(-90)`}));
+  return {px,py,m};
+}
+function niceTicks(a,b,n){const span=b-a,step0=span/n,mag=Math.pow(10,Math.floor(Math.log10(step0)));
+  const norm=step0/mag,step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const out=[];for(let t=Math.ceil(a/step)*step;t<=b+1e-9;t+=step)out.push(Math.round(t/step)*step);return out;}
+function fmt(v){return Math.abs(v)>=1000?(v/1000)+"k":(Math.round(v*100)/100).toString();}
+function line(p,pts,attrs){let d="";pts.forEach((q,i)=>{d+=(i?"L":"M")+p.px(q[0]).toFixed(1)+" "+p.py(q[1]).toFixed(1)+" ";});
+  return E("path",Object.assign({d,fill:"none"},attrs));}
+function curve(fn,x0,x1,N){const pts=[];for(let i=0;i<=N;i++){const x=x0+(x1-x0)*i/N;pts.push([x,fn(x)]);}return pts;}
+
+/* ---------- Fig 1: demand curves (linear) ---------- */
+(function(){const svg=document.getElementById("fig-demand"),W=660,H=360;
+  const Es=[[-0.5,"#9aa0a8"],[-1,"#1f7a8c"],[-2,"#d98c00"],[-4,"#bf4e30"]];
+  const p=Plot(svg,W,H,[0,30,0,260],["Price  P  (€)","Units  Q"]);
+  for(const [e,c] of Es){const A=100/Math.pow(10,e); // pin to (10,100)
+    svg.appendChild(line(p,curve(x=>Math.min(260,A*Math.pow(x,e)),5,30,120),{stroke:c,"stroke-width":2.4}));}
+  svg.appendChild(E("circle",{cx:p.px(10),cy:p.py(100),r:4,fill:"#1c1d22"}));
+  svg.appendChild(txt(p.px(10)+8,p.py(100)-8,"(10, 100)",{"font-size":11,fill:"#1c1d22"}));
+})();
+
+/* ---------- Fig 2: demand curves in log-log ---------- */
+(function(){const svg=document.getElementById("fig-loglog"),W=660,H=360;
+  const Es=[[-0.5,"#9aa0a8"],[-1,"#1f7a8c"],[-2,"#d98c00"],[-4,"#bf4e30"]];
+  const p=Plot(svg,W,H,[1.5,3.5,0,7],["ln P","ln Q"]);
+  for(const [e,c] of Es){const lnA=Math.log(100)-e*Math.log(10);
+    svg.appendChild(line(p,curve(x=>lnA+e*x,1.6,3.4,2),{stroke:c,"stroke-width":2.4}));
+    const xe=3.2;svg.appendChild(txt(p.px(xe)+4,p.py(lnA+e*xe)-3,"slope = "+e,{"font-size":10.5,fill:c,"font-weight":600}));}
+})();
+
+/* ---------- Fig 3: scatter + OLS fit + residuals ---------- */
+(function(){const svg=document.getElementById("fig-scatter"),W=660,H=380;
+  const data=[[10,104],[11,86],[12,82],[12,69],[13,64],[14,55],[15,44],[16,41],[18,33],[20,27],[22,24],[24,19]];
+  const xs=data.map(d=>Math.log(d[0])),ys=data.map(d=>Math.log(d[1]));
+  const n=xs.length;let sx=0,sy=0,sxx=0,syy=0,sxy=0;
+  for(let i=0;i<n;i++){sx+=xs[i];sy+=ys[i];sxx+=xs[i]*xs[i];syy+=ys[i]*ys[i];sxy+=xs[i]*ys[i];}
+  const Sxx=sxx-sx*sx/n,Syy=syy-sy*sy/n,Sxy=sxy-sx*sy/n;
+  const slope=Sxy/Sxx,inter=(sy-slope*sx)/n,r2=Sxy*Sxy/(Sxx*Syy);
+  const sse=Math.max(0,Syy-slope*Sxy),se=Math.sqrt(sse/(n-2)/Sxx);
+  const xmin=Math.min(...xs)-0.05,xmax=Math.max(...xs)+0.05,ymin=Math.min(...ys)-0.1,ymax=Math.max(...ys)+0.1;
+  const p=Plot(svg,W,H,[xmin,xmax,ymin,ymax],["ln(unit price)","ln(units)"],{mt:24});
+  // residual stems
+  for(let i=0;i<n;i++){const yhat=inter+slope*xs[i];
+    svg.appendChild(E("line",{x1:p.px(xs[i]),y1:p.py(ys[i]),x2:p.px(xs[i]),y2:p.py(yhat),stroke:"#c7ccd2","stroke-width":1}));}
+  // fit line
+  svg.appendChild(line(p,[[xmin,inter+slope*xmin],[xmax,inter+slope*xmax]],{stroke:"#bf4e30","stroke-width":2.6}));
+  // points
+  for(let i=0;i<n;i++)svg.appendChild(E("circle",{cx:p.px(xs[i]),cy:p.py(ys[i]),r:4.2,fill:"#1f7a8c",stroke:"#fff","stroke-width":1.3}));
+  // annotation box
+  const bx=p.px(xmax)-186,by=p.py(ymax)+6;
+  svg.appendChild(E("rect",{x:bx,y:by,width:178,height:62,rx:7,fill:"#fbf5e9",stroke:"#e7c9a6"}));
+  svg.appendChild(txt(bx+12,by+22,"Ê (slope) = "+slope.toFixed(2),{"font-size":13,fill:"#9d3328","font-weight":700}));
+  svg.appendChild(txt(bx+12,by+40,"R² = "+r2.toFixed(2)+"     SE = "+se.toFixed(2),{"font-size":12,fill:"#5d6168"}));
+  const conf=(slope+1.645*se)<=-1;
+  svg.appendChild(txt(bx+12,by+56,"Ê+1.645·SE = "+(slope+1.645*se).toFixed(2)+(conf?"  ≤ −1 ✓":"  > −1"),
+    {"font-size":11.5,fill:conf?"#2e7d4f":"#c0392b","font-weight":600}));
+})();
+
+/* ---------- Fig 4: profit curve ---------- */
+(function(){const svg=document.getElementById("fig-profit"),W=660,H=380;
+  const c=12,e=-2.4,A=4000; const star=c*e/(e+1); const anchor=34.99;
+  const prof=P=>(P-c)*A*Math.pow(P,e);
+  const x0=8,x1=46;let ymax=0;for(let P=x0;P<=x1;P+=0.2)ymax=Math.max(ymax,prof(P));
+  ymax*=1.12;
+  const p=Plot(svg,W,H,[x0,x1,-15,ymax],["Price  P  (€)","Profit  π(P)"],{yfmt:v=>v===0?"0":fmt(v)});
+  // zero line
+  svg.appendChild(E("line",{x1:p.px(x0),y1:p.py(0),x2:p.px(x1),y2:p.py(0),stroke:"#cfd3d9","stroke-dasharray":"3 3"}));
+  // cost & anchor markers
+  function vmark(P,col,lab,dy){svg.appendChild(E("line",{x1:p.px(P),y1:p.py(-15),x2:p.px(P),y2:p.m.t,stroke:col,"stroke-dasharray":"4 4","stroke-width":1.3}));
+    svg.appendChild(txt(p.px(P)+4,p.m.t+(dy||14),lab,{"font-size":11,fill:col,"font-weight":600}));}
+  vmark(c,"#9aa0a8","cost €12");
+  vmark(anchor,"#1f7a8c","anchor €34.99",28);
+  // profit curve
+  svg.appendChild(line(p,curve(prof,x0,x1,200),{stroke:"#d98c00","stroke-width":2.8}));
+  // P* marker
+  svg.appendChild(E("circle",{cx:p.px(star),cy:p.py(prof(star)),r:5,fill:"#bf4e30",stroke:"#fff","stroke-width":1.5}));
+  svg.appendChild(E("line",{x1:p.px(star),y1:p.py(prof(star)),x2:p.px(star),y2:p.py(0),stroke:"#bf4e30","stroke-dasharray":"4 4"}));
+  svg.appendChild(txt(p.px(star),p.py(prof(star))-12,"P* = €"+star.toFixed(2),{"text-anchor":"middle","font-size":12.5,fill:"#bf4e30","font-weight":700}));
+})();
+
+/* ---------- Fig 5: markup explosion ---------- */
+(function(){const svg=document.getElementById("fig-markup"),W=660,H=360;
+  const m=E_=>E_/(E_+1);
+  const p=Plot(svg,W,H,[-6,-1,0,10],["Elasticity  E","Optimal markup  m(E) = E/(E+1)"],{ml:60,
+    yfmt:v=>"×"+v});
+  // horizontal asymptote m=1
+  svg.appendChild(E("line",{x1:p.px(-6),y1:p.py(1),x2:p.px(-1),y2:p.py(1),stroke:"#cfd3d9","stroke-dasharray":"4 4"}));
+  svg.appendChild(txt(p.px(-5.9),p.py(1)-6,"m → 1 (price → cost)",{"font-size":11,fill:"#7a7f87"}));
+  // vertical asymptote E=-1
+  svg.appendChild(E("line",{x1:p.px(-1.001),y1:p.m.t,x2:p.px(-1.001),y2:H-p.m.b,stroke:"#c0392b","stroke-dasharray":"4 4"}));
+  svg.appendChild(txt(p.px(-1.001)-6,p.m.t+14,"E = −1",{"text-anchor":"end","font-size":11,fill:"#c0392b","font-weight":600}));
+  // curve (clip at y=10)
+  const pts=[];for(let E_=-6;E_<=-1.04;E_+=0.01){const y=m(E_);if(y<=10.2)pts.push([E_,y]);}
+  svg.appendChild(line(p,pts,{stroke:"#bf4e30","stroke-width":2.8}));
+  // sample dots
+  [[-2,"−2 → ×2"],[-1.5,"−1.5 → ×3"],[-1.18,"−1.18 → ×6.6"]].forEach(([e,l])=>{
+    svg.appendChild(E("circle",{cx:p.px(e),cy:p.py(m(e)),r:4,fill:"#1f7a8c"}));
+    svg.appendChild(txt(p.px(e)+7,p.py(m(e))+(e>-1.3?-4:4),l,{"font-size":10.5,fill:"#1f7a8c","font-weight":600}));});
+})();
+
+/* ---------- Fig 6: confidence gate (two bells) ---------- */
+(function(){const svg=document.getElementById("fig-ci"),W=660,H=360;
+  function bell(mu,sd){return x=>Math.exp(-0.5*((x-mu)/sd)**2)/(sd*Math.sqrt(2*Math.PI));}
+  const A={mu:-2.4,sd:0.5,c:"#2e7d4f"},B={mu:-1.18,sd:0.40,c:"#c0392b"};
+  const peak=Math.max(bell(A.mu,A.sd)(A.mu),bell(B.mu,B.sd)(B.mu))*1.15;
+  const p=Plot(svg,W,H,[-4.2,0.4,0,peak],["Fitted elasticity  Ê","density"],{yticks:[0],yfmt:()=>""});
+  // threshold E=-1
+  svg.appendChild(E("line",{x1:p.px(-1),y1:p.m.t,x2:p.px(-1),y2:H-p.m.b,stroke:"#1c1d22","stroke-dasharray":"5 4","stroke-width":1.4}));
+  svg.appendChild(txt(p.px(-1)+5,p.m.t+14,"threshold E = −1",{"font-size":11,fill:"#1c1d22","font-weight":600}));
+  function drawBell(o,label,sub){
+    // shaded fill to baseline
+    const pts=curve(bell(o.mu,o.sd),-4.2,0.4,160);
+    let d="M"+p.px(-4.2)+" "+p.py(0);pts.forEach(q=>d+="L"+p.px(q[0]).toFixed(1)+" "+p.py(q[1]).toFixed(1));
+    d+="L"+p.px(0.4)+" "+p.py(0)+"Z";
+    svg.appendChild(E("path",{d,fill:o.c,"fill-opacity":0.12}));
+    svg.appendChild(line(p,pts,{stroke:o.c,"stroke-width":2.6}));
+    // upper one-sided bound marker
+    const ub=o.mu+1.645*o.sd;
+    svg.appendChild(E("line",{x1:p.px(ub),y1:p.py(0),x2:p.px(ub),y2:p.py(bell(o.mu,o.sd)(ub)),stroke:o.c,"stroke-width":1.4,"stroke-dasharray":"3 3"}));
+    svg.appendChild(E("circle",{cx:p.px(o.mu),cy:p.py(bell(o.mu,o.sd)(o.mu)),r:3.5,fill:o.c}));
+    svg.appendChild(txt(p.px(o.mu),p.py(bell(o.mu,o.sd)(o.mu))-8,label,{"text-anchor":"middle","font-size":12,fill:o.c,"font-weight":700}));
+    svg.appendChild(txt(p.px(ub),p.py(0)+15,"+1.645·SE = "+ub.toFixed(2),{"text-anchor":"middle","font-size":10,fill:o.c,"font-weight":600}));
+  }
+  drawBell(A,"SKU A  (−2.4 ± 0.5)");
+  drawBell(B,"SKU B  (−1.18 ± 0.40)");
+})();
+</script>
+</body>
+</html>

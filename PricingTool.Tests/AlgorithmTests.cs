@@ -324,6 +324,42 @@ public class DeadStockTests
             ksStock: 5, supplierStock: 50, qty90: 0);
         Assert.Equal(90m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
     }
+
+    [Fact]
+    public void FreshlyStockedPreOrder_NoOpinion_HasNotHadAChanceToSell()
+    {
+        // Just arrived (oldest unit 5 days old) with no 90d sales — not dead, just freshly stocked.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            oldestUnitAgeDays: 5);
+        Assert.Null(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void StockOlderThanMinAge_StillMarksDown()
+    {
+        // Oldest unit is well past the 30-day freshness gate → genuinely stale, so it fires as normal.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            oldestUnitAgeDays: 90);
+        Assert.Equal(90m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
+
+    [Fact]
+    public void StockAgeExactlyAtThreshold_MarksDown()
+    {
+        // The gate is "younger than" the minimum (default 30), so exactly 30 days qualifies as dead.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            oldestUnitAgeDays: 30);
+        Assert.NotNull(_algorithm.Evaluate(ctx));
+    }
+
+    [Fact]
+    public void UnknownStockAge_FallsBackToPriorBehaviour_MarksDown()
+    {
+        // No WMS check-in row (null age): we can't confirm freshness, so behave as before and mark down.
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            oldestUnitAgeDays: null);
+        Assert.Equal(90m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
 }
 
 /// <summary>The dataset caveat: qty 0 with NULL discount history must never crash or mislead any algorithm.</summary>

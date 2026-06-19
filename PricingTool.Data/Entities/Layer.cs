@@ -31,6 +31,13 @@ public class Layer
     /// <summary>Warehouse store id used for the IsLocalToStoreIds local-stock split.</summary>
     public int WarehouseStoreId { get; set; }
 
+    /// <summary>
+    /// WarehouseManagmentSystem.ProductCheckIns.WarehouseId for this layer's country (KS=1, AL=5, MK=6).
+    /// Scopes the per-SKU "oldest on-hand unit age" lookup that gates dead-stock (a freshly received
+    /// pre-order isn't dead, it just arrived). Brand-independent — both brands in a country share it.
+    /// </summary>
+    public int WmsWarehouseId { get; set; }
+
     /// <summary>SR_ProductsData PlatformId for elasticity scoping (paired with SrCompanyId).</summary>
     public int SrPlatformId { get; set; }
 

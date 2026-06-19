@@ -52,6 +52,7 @@ public class SqlSourceDataReader : ISourceDataReader
         command.Parameters.AddWithValue("@StoreId", layer.StoreId);
         command.Parameters.AddWithValue("@TranslationCountryId", layer.TranslationCountryId);
         command.Parameters.AddWithValue("@WarehouseStoreId", layer.WarehouseStoreId);
+        command.Parameters.AddWithValue("@WmsWarehouseId", layer.WmsWarehouseId);
         command.Parameters.AddWithValue("@FilterVendors", layer.FilterVendors);
         command.Parameters.AddWithValue("@ExcludeUnpublished", layer.ExcludeUnpublished);
 
@@ -67,6 +68,11 @@ public class SqlSourceDataReader : ISourceDataReader
         {
             var i = r.GetOrdinal(col);
             return r.IsDBNull(i) ? 0 : Convert.ToInt32(r.GetValue(i));
+        }
+        static int? IntN(SqlDataReader r, string col)
+        {
+            var i = r.GetOrdinal(col);
+            return r.IsDBNull(i) ? null : Convert.ToInt32(r.GetValue(i));
         }
 
         while (await reader.ReadAsync(ct))
@@ -87,6 +93,7 @@ public class SqlSourceDataReader : ISourceDataReader
                 LocalWarehouseStock = Int0(reader, "LocalWarehouseStock"),
                 SupplierWarehouseStock = Int0(reader, "Supplier_WarehouseStock"),
                 IsNewProduct = Int0(reader, "IsNewProduct") == 1,
+                OldestUnitAgeDays = IntN(reader, "OldestUnitAgeDays"),
                 Qty7 = Int0(reader, "7d_qty"),
                 Net7 = Dec0(reader, "7d_net"),
                 Qty14 = Int0(reader, "14d_qty"),

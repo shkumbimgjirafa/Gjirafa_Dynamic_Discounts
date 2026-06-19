@@ -160,12 +160,13 @@ public class GuardrailService
         ctx.KsStock == 0 && ctx.SupplierStock > 0 && ctx.Qty90 == 0;
 
     /// <summary>
-    /// Locally-held stock we may clear at a loss: held in our own warehouse, with a known cost, and not
-    /// a platform-new product (those are held by the new-product guardrail anyway). Combined with the
-    /// 90-day no-sales test inside the guardrail this is the dead-stock "tunnel" — the only case allowed
-    /// below the margin floor. The "started selling again" branch additionally requires the current price
-    /// to already sit below the floor, i.e. it got there via the tunnel.
+    /// Locally-held stock we may clear at a loss: held in our own warehouse, with a known cost, not a
+    /// platform-new product (those are held by the new-product guardrail anyway), and not freshly stocked
+    /// (a just-arrived pre-order/restock shouldn't get the below-floor tunnel either — same gate the
+    /// dead-stock algorithm uses). Combined with the 90-day no-sales test inside the guardrail this is the
+    /// dead-stock "tunnel" — the only case allowed below the margin floor. The "started selling again"
+    /// branch additionally requires the current price to already sit below the floor, i.e. it got there via the tunnel.
     /// </summary>
     public static bool IsLocalDeadStock(SkuContext ctx) =>
-        ctx.KsStock > 0 && ctx.Pptcv is > 0m && !ctx.IsNewProduct;
+        ctx.KsStock > 0 && ctx.Pptcv is > 0m && !ctx.IsNewProduct && !ctx.IsFreshlyStocked;
 }

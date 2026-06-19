@@ -127,6 +127,9 @@ public class DemoDataGenerator
             GrossMargin = archetype.MissingCost ? null : Math.Round(marginPct, 2),
             LocalWarehouseStock = ksStock,
             SupplierWarehouseStock = supplierStock,
+            // Dead-stock demo items are long-stale (well past the freshness gate) so they still mark down;
+            // everything else has no check-in age (null), mirroring SKUs the WMS doesn't track.
+            OldestUnitAgeDays = archetype.DeadStock ? 120 : (int?)null,
             Qty7 = q7, Net7 = NetFor(q7), Disc7 = DiscFor(q7),
             Qty14 = q14, Net14 = NetFor(q14), Disc14 = DiscFor(q14),
             Qty30 = q30, Net30 = NetFor(q30), Disc30 = DiscFor(q30),

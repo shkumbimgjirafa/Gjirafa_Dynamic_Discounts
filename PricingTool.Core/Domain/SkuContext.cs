@@ -50,6 +50,15 @@ public class SkuContext
     /// <summary>True when inside the platform MarkAsNew window — the engine holds the current price (no discount, no change).</summary>
     public bool IsNewProduct { get; init; }
 
+    /// <summary>
+    /// Age in days of the oldest unit currently held in our warehouse (from the WMS check-in log), or
+    /// null when unknown (no check-in row). Dead-stock requires this to be at or above
+    /// <see cref="Options.PricingEngineOptions.DeadStockMinStockAgeDays"/> before treating a no-sales SKU
+    /// as "dead" — freshly received pre-orders/restocks just arrived and haven't had a chance to sell.
+    /// Unknown age is treated as old enough (a genuine fresh arrival always carries a recent check-in).
+    /// </summary>
+    public int? OldestUnitAgeDays { get; init; }
+
     public int Qty7 { get; init; }
     public int Qty14 { get; init; }
     public int Qty30 { get; init; }
@@ -92,6 +101,14 @@ public class SkuContext
     // ---- Derived metrics -------------------------------------------------
 
     public int TotalStock => KsStock + SupplierStock;
+
+    /// <summary>
+    /// True when we KNOW the oldest on-hand unit is younger than the dead-stock minimum age — freshly
+    /// received stock (e.g. a pre-order/restock) that hasn't had a fair chance to sell yet. Unknown age
+    /// (no WMS check-in row) is treated as NOT fresh, so coverage gaps fall back to prior behaviour.
+    /// </summary>
+    public bool IsFreshlyStocked =>
+        OldestUnitAgeDays is int age && age < Options.DeadStockMinStockAgeDays;
 
     /// <summary>Today's discount as a fraction of the anchor price, clamped to [0, 1).</summary>
     public decimal CurrentDiscountFraction =>

@@ -23,6 +23,11 @@ public class SnapshotRow
     /// <summary>True when the product is inside its platform MarkAsNew window — hold price (no discount).</summary>
     public bool IsNewProduct { get; init; }
 
+    /// <summary>Age in days of the oldest unit currently on hand in this layer's warehouse (WMS check-in
+    /// log). Null when the SKU has no check-in row. Gates dead-stock: a freshly-stocked pre-order with no
+    /// 90d sales isn't "dead" yet.</summary>
+    public int? OldestUnitAgeDays { get; init; }
+
     public int Qty7 { get; init; }
     public decimal Net7 { get; init; }
     public decimal? Disc7 { get; init; }

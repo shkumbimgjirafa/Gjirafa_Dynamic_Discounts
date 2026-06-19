@@ -11,6 +11,10 @@ namespace PricingTool.Core.Algorithms;
 /// Only locally-held (KS) stock counts: dead stock sitting only in supplier warehouses is not
 /// ours to give margin away on, so this algorithm abstains when KsStock is zero — we don't
 /// discount supplier stock that doesn't sell.
+///
+/// It also abstains on freshly-stocked SKUs: a pre-order/restock that only just arrived has zero
+/// recent sales because it hasn't had a chance to sell, not because it's dead. The oldest on-hand unit
+/// must be at least <see cref="SkuContext.Options"/>.DeadStockMinStockAgeDays old (see <see cref="SkuContext.IsFreshlyStocked"/>).
 /// </summary>
 public class DeadStockMarkdownAlgorithm : IPricingAlgorithm
 {
@@ -21,6 +25,11 @@ public class DeadStockMarkdownAlgorithm : IPricingAlgorithm
     {
         // Gate on locally-held stock, not total: supplier-only dead stock is left alone.
         if (ctx.Qty90 != 0 || ctx.KsStock <= 0) return null;
+
+        // Freshly-stocked guard: a pre-order/restock that only just arrived has zero recent sales because
+        // it hasn't had a chance to sell — not because it's dead. Require the oldest on-hand unit to be at
+        // least DeadStockMinStockAgeDays old. Unknown age (no WMS check-in row) is treated as old enough.
+        if (ctx.IsFreshlyStocked) return null;
 
         // ZeroSaleStreakDays counts SNAPSHOT ROWS, which equal calendar days only at the ~daily (24h)
         // run cadence. "14" therefore means "two weeks" only at 24h; a slower cadence (e.g. 72h) would
