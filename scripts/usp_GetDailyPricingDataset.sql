@@ -106,13 +106,15 @@ BEGIN
     -- StatusId IN (2,6,7) = units physically on hand; @WmsWarehouseId selects the country warehouse
     -- (KS=1, AL=5, MK=6). Drives the dead-stock freshness gate — a freshly received pre-order isn't
     -- 'dead', it just arrived. LEFT-joined below, so a SKU with no check-in row leaves age NULL.
-    SELECT pci.Sku, DATEDIFF(DAY, MIN(pci.InsertDateTime), @now) AS OldestUnitAgeDays
+    -- CAST: ProductCheckIns.Sku is a MAX-length type, which can't be an index key (error 1919) — bound it
+    -- to nvarchar(400) (matches Product.Sku) so #age can be indexed for the final join.
+    SELECT CAST(pci.Sku AS nvarchar(400)) AS Sku, DATEDIFF(DAY, MIN(pci.InsertDateTime), @now) AS OldestUnitAgeDays
     INTO #age
     FROM WarehouseManagmentSystem.dbo.ProductCheckIns pci
     INNER JOIN #stock st ON st.Sku = pci.Sku
     WHERE pci.StatusId IN (2, 6, 7)
       AND pci.WarehouseId = @WmsWarehouseId
-    GROUP BY pci.Sku;
+    GROUP BY CAST(pci.Sku AS nvarchar(400));
     CREATE CLUSTERED INDEX cx ON #age (Sku);
 
     -- 3) Final dataset, one row per in-scope SKU
