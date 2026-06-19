@@ -40,11 +40,11 @@ migration; activating/deactivating or retuning a layer is a data edit (no redepl
 
 | Project | Purpose |
 |---|---|
-| `PricingTool.Core` | Domain: the 4 pricing algorithms, weighted scoring, guardrails (incl. new-product hold + supplier-only), VAT math, psychological rounding, demo data generator |
+| `PricingTool.Core` | Domain: the 5 pricing algorithms, weighted scoring, guardrails (incl. new-product hold), VAT math, psychological rounding, demo data generator |
 | `PricingTool.Data` | EF Core (migrations, `PricingTool` schema), per-layer source dataset readers, run orchestrator, bulk writer, CSV push integration, audit |
 | `PricingTool.Engine` | Background worker — scheduled recalculation, looping active layers (schedule read per layer from DB, admin-editable live) |
 | `PricingTool.Web` | ASP.NET Core admin UI + impact dashboard, layer switcher (dev-shim auth, Analyst/Manager roles) |
-| `PricingTool.Tests` | xUnit suite (152 tests): every algorithm incl. 0-vs-NULL handling, guardrails, gross-margin & VAT math, profit/margin KPIs, rounding-never-violates-guardrails (all conventions), weighted scoring, orchestrator policies |
+| `PricingTool.Tests` | xUnit suite (182 tests): every algorithm incl. 0-vs-NULL handling, guardrails, gross-margin & VAT math, profit/margin KPIs, rounding-never-violates-guardrails (all conventions), weighted scoring, orchestrator policies |
 
 ## Quick start (demo mode — no source database needed)
 
@@ -168,15 +168,15 @@ Selected per band (per layer), and always clamped inside the band guardrails:
 Under €5 the `.99` grid tightens to a 10-cent `.x9` grid (…0.99, 1.09, 1.19) so cheap items don't
 swing between 0.99 and 1.99 and distort margin (threshold: `PricingEngine:LowPriceRoundingThreshold`).
 
-### The 4 algorithms
+### The 5 algorithms
 
-`SELL_THROUGH`, `DEAD_STOCK`, `ELASTICITY`, `MARGIN_TIER` — each an `IPricingAlgorithm` in
+`SELL_THROUGH`, `DEAD_STOCK`, `ELASTICITY`, `MARGIN_TIER`, `CROSS_DOCK` — each an `IPricingAlgorithm` in
 `PricingTool.Core/Algorithms`, individually toggleable and weighted per band. Algorithms return
 `null` when they have no opinion; if nothing votes, the price stays unchanged. (Consolidated from
 the original 10: `SELL_THROUGH` merges velocity-forecast + stockout-risk + momentum; `STOCK_AGING`,
 `SUPPLIER_LOCAL` and `DISCOUNT_EFFECTIVENESS` were retired; `NEW_PRODUCT` is no longer an algorithm —
-new-product protection is now a hard engine rule from the platform MarkAsNew window, alongside the
-supplier-only-no-markdown guardrail.)
+new-product protection is now a hard engine rule from the platform MarkAsNew window. `CROSS_DOCK` was
+later added for supplier-fulfilled SKUs, replacing the old supplier-only-no-markdown guardrail.)
 
 Aging ("consecutive snapshot days of no movement") is derived from the tool's own snapshot
 history: consecutive daily snapshots with zero trailing-7d sales. This counter measures **snapshot
@@ -198,6 +198,16 @@ sales in 90 days, the markdown deepens 5pp every two weeks and may run down to *
 `GuardrailService` (flag `DEAD_STOCK_FLOOR_RELAXED`), so it's gated on the dead-stock context, not on
 which algorithm voted. Once such a below-floor price starts selling again it's frozen at that level
 (`DEAD_STOCK_TUNNEL_HELD`) — never raised back.
+
+`CROSS_DOCK` (weight 40) is the lane for **supplier-fulfilled** SKUs — `KsStock == 0 && SupplierStock > 0`,
+the ones the other advisors skip (sell-through/dead-stock need local stock; elasticity often can't fit). A
+sell-through/dead-stock hybrid: it **holds** the working price when the SKU is selling (`Qty90 > 0`) and
+runs a **soft progressive markdown toward the band margin floor** when it isn't (`Qty90 == 0`, opening at
+5% and deepening 5pp every ~3 weeks). Unlike dead-stock it's bounded by the **normal** margin floor, never
+the below-floor tunnel — nothing is sunk to recover. It's monotonic (never raises, except lifting an
+underwater price up to the floor) and low-weighted so it defers to `ELASTICITY` when that fires. Adding it
+**removed** the old supplier-only-no-markdown freeze: supplier stock is now priced, not frozen. See
+[`docs/algorithms/cross-dock.md`](docs/algorithms/cross-dock.md).
 
 **Reporting.** Movers shows each SKU's average selling price per 7d/30d/90d window (gross, VAT incl.).
 Both Movers and Proposals show profit &amp; margin KPI cards — now → proposed over 7d/30d/90d, using a

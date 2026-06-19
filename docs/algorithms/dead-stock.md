@@ -1,7 +1,8 @@
 # DEAD_STOCK — Deep Dive
 
 *Companion to [`../pricing-algorithms-explained.md`](../pricing-algorithms-explained.md), and a sibling
-of [`sell-through.md`](sell-through.md), [`margin-tier.md`](margin-tier.md) and
+of [`sell-through.md`](sell-through.md), [`margin-tier.md`](margin-tier.md),
+[`cross-dock.md`](cross-dock.md) and
 [`elasticity.html`](elasticity.html). This file explains one advisor — **Dead-stock progressive
 markdown** — end to end: every input it reads, every decision it makes, and three real worked examples
 from a live GjirafaMall/KS run (run #29). No code, just the logic.*
@@ -63,8 +64,9 @@ It votes **only** when **all three** hold:
    arrival would be wrong. Unknown age (no WMS check-in row) is treated as old enough, so any coverage
    gap falls back to the prior behaviour. This same gate also closes the tunnel for fresh stock (§4).
 
-If any fail, it's **silent**. In particular, stock that sits *only* in a supplier warehouse and
-isn't selling is deliberately ignored — it's not ours to give margin away on (see §6).
+If any fail, it's **silent**. In particular, stock that sits *only* in a supplier warehouse is
+deliberately ignored — that's the **Cross-dock advisor's** lane now ([`cross-dock.md`](cross-dock.md)),
+which prices supplier-fulfilled SKUs (see §6).
 
 ### Step 1 — Count the markdown steps
 
@@ -228,12 +230,15 @@ a vote at all, but the guardrail honouring a tunnel price the lane created on an
   keeps it out of the markdown lane *and* the below-floor tunnel until it has genuinely aged. The
   `MarkAsNew` guardrail only covers *platform-new* products; this gate is what catches restocks of
   existing SKUs. Unknown age (no check-in row) falls back to the prior behaviour.
-- **Supplier-only dead stock is left alone.** If every unit sits in a supplier warehouse (`KsStock == 0`),
-  the algorithm abstains and the guardrail additionally blocks any markdown
-  (`SUPPLIER_ONLY_NO_MARKDOWN`) — we don't give margin away on inventory we don't physically hold. See
-  the stock-location rules shared with [`sell-through.md`](sell-through.md).
+- **Supplier-only stock is the Cross-dock lane's job now.** If every unit sits in a supplier warehouse
+  (`KsStock == 0`), dead-stock abstains — but it is **no longer frozen by a guardrail**. The old
+  "supplier-only, never marked down" rule (`SUPPLIER_ONLY_NO_MARKDOWN`) has been **removed**; the
+  **Cross-dock advisor** ([`cross-dock.md`](cross-dock.md)) now prices these SKUs deliberately, bounded by
+  the normal margin floor.
 - **It's the only advisor allowed below the margin floor** — through the *tunnel*, down to 50% of cost.
-  Every other algorithm (sell-through, elasticity, margin-tier) is hard-clamped at the floor.
+  Every other algorithm (sell-through, elasticity, margin-tier, cross-dock) is hard-clamped at the floor.
+  In particular, cross-dock's supplier-side markdown stops at the margin floor — the below-floor tunnel is
+  for sunk, locally-held inventory only.
 - **The "held" pin is a guardrail, not a vote.** When you see `DEAD_STOCK_TUNNEL_HELD` the dead-stock
   *algorithm* said nothing (the item is selling); the guardrail is honouring a below-floor price an
   earlier run created. The winning reason code will be a sell-through one, not a dead-stock one.

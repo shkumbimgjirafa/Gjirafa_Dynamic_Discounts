@@ -1,6 +1,6 @@
 # How the Pricing Tool Decides a Price — In Plain Words
 
-This document explains, without any code, the *logic* behind each of the 4 pricing
+This document explains, without any code, the *logic* behind each of the 5 pricing
 algorithms and how they come together into one proposed price. It's written for anyone
 on the team — you don't need to be an engineer to follow it.
 
@@ -12,14 +12,13 @@ For every product (SKU), once per run, the tool does this:
 
 1. **Gathers the facts** — current price, full/shelf price, cost, stock on hand, and how
    many units sold over the last 7 / 14 / 30 / 60 / 90 days.
-2. **Asks 4 "advisors" (the algorithms)** what the price should be. Each one looks at the
+2. **Asks 5 "advisors" (the algorithms)** what the price should be. Each one looks at the
    facts from its own angle and either **votes** for a price or **stays silent** (says
    "no opinion").
 3. **Blends the votes** into one number — a *weighted average*, where louder, more-confident
    advisors pull the result more.
-4. **Applies hard limits (guardrails)** — never above the anchor price (FinalPrice), never below
-   the margin floor (except locally-held dead stock, which may go down to 50% of cost), and never
-   marks down supplier-only stock that isn't selling.
+4. **Applies hard limits (guardrails)** — never above the anchor price (FinalPrice), and never below
+   the margin floor (except locally-held dead stock, which may go down to 50% of cost).
 5. **Rounds to a nice-looking price** (e.g. ends in .99) — but only if rounding doesn't
    break the guardrails.
 
@@ -51,12 +50,13 @@ last 7 days at 50%, the last 14 days at 30%, and the last 30 days at 20%.
 
 ---
 
-## The 4 algorithms
+## The 5 algorithms
 
 > Consolidated from the original 10: the velocity family (velocity-forecast + stockout-risk +
 > momentum) is now one **Sell-through** advisor; warehouse-stock-aging, supplier-vs-local and
 > discount-effectiveness were retired; new-product protection is no longer a voting algorithm — it's
-> now a hard guardrail (see below). Section numbers below are kept for reference.
+> now a hard guardrail (see below). **Cross-dock (#11)** was later added for supplier-fulfilled SKUs.
+> Section numbers below are kept for reference.
 
 Each one is an independent advisor. It only speaks when its specific situation applies;
 otherwise it abstains. The **default weight** (0–100) is how much its vote counts before
@@ -156,8 +156,8 @@ quiet again, the markdown resumes deepening.)
 
 This is the strongest "get it moving" advisor for stuck inventory.
 
-**Silent when:** the dead stock sits *only* in supplier warehouses (none held locally) — we
-don't discount stock we don't hold that isn't selling (see the supplier-stock guardrail below) — **or**
+**Silent when:** the dead stock sits *only* in supplier warehouses (none held locally) — that's the
+**Cross-dock advisor's** lane now (#11), not dead-stock's — **or**
 when the stock is **freshly arrived**: if the oldest unit we hold has been in the warehouse less than
 **30 days** (from the warehouse check-in log), a no-sales SKU is treated as a just-landed pre-order /
 restock that hasn't had a chance to sell, not as dead stock. (This is separate from the new-product
@@ -180,8 +180,39 @@ Sell-through advisor (#1).
 ---
 
 ### 10. ~~Supplier-vs-local stock positioning~~ — *retired*
-Marginal in practice and overlapped #1; supplier-only dead stock is already protected by the
-engine-wide guardrail (it is never marked down).
+Marginal in practice and overlapped #1. (Its concern — what to do with supplier-fulfilled stock — is now
+handled properly by the **Cross-dock** advisor, #11.)
+
+---
+
+### 11. Cross-dock (supplier-fulfilled) markdown — *default weight 40*
+**The situation:** We don't hold this in our own warehouse (`KsStock = 0`) but can sell it from supplier
+stock (`SupplierStock > 0`) — a customer orders, we order from the supplier, we resell. Sell-through and
+dead-stock both abstain on these (they need locally-held stock), and elasticity often can't fit (too little
+price history), so without this lane a selling supplier SKU never gets a price and just sits at its anchor.
+
+**What it does** — a sell-through / dead-stock **hybrid**, with the branch chosen by sales status:
+- **Selling (`Qty90 > 0`)** → **hold** the working price (an active vote at today's price, so a co-voting
+  margin-tier can't claw the working discount back up). It deepens one small step only when demand is
+  *decaying* **and** there's comfortable margin room; thin margin → just hold. It never raises.
+- **Not selling (`Qty90 == 0`)** → a **soft progressive markdown** from the current price toward the band
+  margin floor as the no-sale streak grows (opens at **5%**, **+5pp every ~3 weeks** — gentler than
+  dead-stock). It starts at today's price and only deepens; it never raises.
+- **Priced below the floor** → lift it up to the floor and stop (the lane's only upward move).
+
+**Key difference from dead-stock:** cross-dock is bounded by the **normal margin floor — never** the
+below-floor (50%-of-cost) tunnel. Nothing is sunk (we never buy the unit), so a sale below the floor would
+just lose money on every fulfilled order. There's no holding cost or aging risk pushing us lower.
+
+**Low weight (40)** so it defers to elasticity (80) when both fire, but carries the vote when elasticity is
+absent — the common case for supplier SKUs. Monotonic and sticky: when a marked-down SKU finally sells, it
+flips to the "hold" branch and keeps the price that moved it.
+
+> **Deep dive:** [`algorithms/cross-dock.md`](algorithms/cross-dock.md) — every input, every branch, and
+> worked examples.
+
+**Silent when:** we hold any local stock (that's sell-through / dead-stock's lane), there's no supplier
+stock to sell, the SKU is platform-new, or its cost is unknown.
 
 ---
 
@@ -218,11 +249,11 @@ After the averaging, these non-negotiable limits are applied:
    longer governs this.) If FinalPrice is missing or zero, the anchor falls back to the shelf
    price and the proposal is flagged (*"No FinalPrice — anchored to the shelf price"*), since the
    cap may then rest on an inflated reference.
-3. **No markdown on supplier-only dead stock** — if every unit sits in a supplier warehouse
-   (none in our own) **and** nothing has sold in 90 days, the price is never marked *below*
-   today's price. We don't give margin away on inventory we don't hold that isn't selling.
-   (Raising the price back toward full is still allowed — only a net markdown is blocked.)
-   This is enforced centrally, so it applies no matter which advisor proposed the discount.
+3. *(Removed)* **Supplier-only stock is no longer frozen.** There used to be a guardrail that blocked any
+   markdown on supplier-only stock that wasn't selling. That freeze has been **removed**: supplier-fulfilled
+   SKUs are now priced deliberately by the **Cross-dock advisor** (#11), bounded by the normal margin floor
+   above — a markdown may run down to the floor, but never below it (there's no sunk cost to recover, so the
+   dead-stock tunnel doesn't apply).
 4. **New-product hold** — while a product is in the platform's **MarkAsNew** window, its price is
    held exactly as-is (no discount, no change), overriding every algorithm. New launches are never
    touched until their new-product window ends.
@@ -278,6 +309,7 @@ to cheap vs. expensive products, without changing any algorithm itself.
 | Dead-stock progressive markdown | down (progressively) | zero sales in 90 days, still in **local** stock |
 | Price elasticity (fitted) | to profit-max price `cost·E/(E+1)` | demand is provably elastic (weekly-fitted) |
 | Margin-tier prioritization | down if fat margin, up if thin | margin is high or near the floor |
+| Cross-dock (supplier-fulfilled) markdown | hold if selling, down (to the margin floor) if not | **no local stock**, supplier stock only |
 
 *All numeric thresholds above are the current defaults and can be tuned. Discounts are always
 measured against the full shelf price; margin = (price − PPTCV) / price, where PPTCV is the all-in

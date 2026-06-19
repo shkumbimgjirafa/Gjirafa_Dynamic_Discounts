@@ -49,7 +49,7 @@ one voice, so the same "how fast is it selling" signal is never counted three ti
 ### Step 0 — Two silence gates (when it says nothing at all)
 
 1. **No local stock** (`KS ≤ 0`) → **silent.** Nothing of ours to clear; supplier-only stock is the
-   guardrail's job, not this advisor's.
+   Cross-dock advisor's lane ([`cross-dock.md`](cross-dock.md)), not this advisor's.
 2. **Zero velocity** (no recent sales → days-to-sellout undefined) → **silent.** A locally-stocked
    item that isn't selling at all is *dead stock* — that's the DEAD_STOCK advisor's lane, not this one.
 
