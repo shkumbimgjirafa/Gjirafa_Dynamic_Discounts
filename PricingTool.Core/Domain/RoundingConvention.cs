@@ -55,4 +55,24 @@ public enum RoundingConvention
     /// hold.</para>
     /// </summary>
     Gj50Charm = 7,
+
+    /// <summary>
+    /// GjirafaMall charm rounding — Power BI's <b>…49 / …99</b> endings, selected the platform way:
+    /// <list type="number">
+    /// <item><b>Round-ten euro</b> (integer part a multiple of 10 — 50.xx, 120.xx, 100.xx, 1000.xx):
+    /// pull <b>down</b> across the ten to the …9.99 just below it (50.30 → 49.99, 120.88 → 119.99,
+    /// 100.00 → 99.99) — never a …0.99. (Falls back to the nearest …49/…99 when the pull exceeds the
+    /// Weber budget, e.g. cheap 10.40 → 10.49.)</item>
+    /// <item>Otherwise <b>round up to this euro's …99</b> when the Weber budget (k·price) reaches it
+    /// (45.40 → 45.99), clawing margin; if it can't afford the jump, the nearest …49/…99.</item>
+    /// </list>
+    /// Clamped to the guardrail bounds (margin floor / OldPrice cap).
+    ///
+    /// <para>Unlike the raw PBI column — which forces the …99 at any distance (123.76 → 124.99) — the
+    /// up-jump here is bounded by the Weber tolerance, so 123.76 → 123.99.</para>
+    ///
+    /// <para><b>Low-price exception:</b> at/below <c>lowPriceThreshold</c> (€5) it snaps to the
+    /// <b>nearest 10 cents</b> (0.10 grid) — the GjirafaMall low-price rule.</para>
+    /// </summary>
+    GjmCharm = 8,
 }

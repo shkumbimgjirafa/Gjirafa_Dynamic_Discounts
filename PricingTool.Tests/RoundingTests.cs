@@ -282,6 +282,96 @@ public class RoundingTests
         }
     }
 
+    // ---- GjmCharm: round up to …99 (Weber-bounded); round-ten euros pull down to …9.99; 10c under €5 ----
+
+    [Theory]
+    [InlineData(45.40, 45.99)]     // round up to this euro's …99 (Weber lets it jump 0.59)
+    [InlineData(45.95, 45.99)]
+    [InlineData(47.31, 47.99)]
+    [InlineData(51.30, 51.99)]
+    [InlineData(123.76, 123.99)]   // not a round-ten euro → …99
+    public void GjmCharm_Apply_RoundsUpToNinetyNine(decimal input, decimal expected)
+    {
+        var result = _rounding.Apply(input, RoundingConvention.GjmCharm, Wide);
+        Assert.Equal(expected, result.Price);
+        Assert.True(result.RoundingApplied);
+    }
+
+    [Theory]
+    [InlineData(50.30, 49.99)]     // round-ten euro → pull DOWN across the ten, not 50.99
+    [InlineData(50.80, 49.99)]     // whole 50.xx euro maps to 49.99
+    [InlineData(60.20, 59.99)]
+    [InlineData(120.88, 119.99)]   // the worked example
+    [InlineData(100.00, 99.99)]
+    [InlineData(250.00, 249.99)]
+    [InlineData(1000.00, 999.99)]
+    [InlineData(1010.30, 1009.99)]
+    public void GjmCharm_Apply_RoundTenEuro_PullsDownBelowTheTen(decimal input, decimal expected)
+    {
+        var result = _rounding.Apply(input, RoundingConvention.GjmCharm, Wide);
+        Assert.Equal(expected, result.Price);
+        Assert.True(result.RoundingApplied);
+    }
+
+    [Fact]
+    public void GjmCharm_Apply_CheapRoundTenEuro_FallsToNearest()
+    {
+        // €10.xx is a round-ten euro, but pulling to 9.99 is a >2% move (out of the Weber budget), so it
+        // falls back to the nearest …49/…99 instead of crossing all the way down.
+        Assert.Equal(10.49m, _rounding.Apply(10.40m, RoundingConvention.GjmCharm, Wide).Price);
+    }
+
+    [Fact]
+    public void GjmCharm_Apply_FallsBack_WhenNinetyNineExceedsAnchorCap()
+    {
+        // up …99 = 45.99 exceeds the OldPrice cap 45.40 → nearest in-bounds …49/…99 = 44.99.
+        var result = _rounding.Apply(45.40m, RoundingConvention.GjmCharm, new PriceBounds(0.01m, 45.40m));
+        Assert.Equal(44.99m, result.Price);
+        Assert.True(result.RoundingApplied);
+    }
+
+    [Theory]
+    [InlineData(4.37, 4.40)]  // nearest 10 cents (up)
+    [InlineData(3.82, 3.80)]  // nearest 10 cents (down)
+    [InlineData(2.55, 2.50)]  // tie → down
+    [InlineData(5.00, 5.00)]  // at the threshold → still nearest-10c (no-op here)
+    public void GjmCharm_Apply_NearestTenCents_AtOrBelowThreshold(decimal input, decimal expected)
+    {
+        // Below €5 GjmCharm keeps the legacy GjirafaMall behaviour: snap to the nearest 10 cents.
+        var result = _rounding.Apply(input, RoundingConvention.GjmCharm, Wide);
+        Assert.Equal(expected, result.Price);
+        Assert.True(result.RoundingApplied);
+    }
+
+    [Fact]
+    public void GjmCharm_PinnedBounds_HeldWithoutSkipFlag()
+    {
+        var result = _rounding.Apply(30.00m, RoundingConvention.GjmCharm, new PriceBounds(30.00m, 30.00m));
+        Assert.Equal(30.00m, result.Price);
+        Assert.False(result.RoundingApplied);
+        Assert.False(result.SkippedOutOfBounds);
+    }
+
+    [Fact]
+    public void GjmCharm_Sweep_IsMonotonic_AndAlwaysEndsIn49Or99()
+    {
+        // Charm regime (> €5): monotonic, in-bounds, and every result ends in …49 or …99.
+        // (The sweep starts just above the €5 threshold; the threshold itself switches to the
+        // nearest-10c regime, a deliberate one-step boundary covered by the dedicated test above.)
+        decimal previous = 0m;
+        for (decimal price = 5.05m; price <= 13000m; price += 0.05m)
+        {
+            var result = _rounding.Apply(price, RoundingConvention.GjmCharm, Wide).Price;
+            var cents = result - Math.Floor(result);
+
+            Assert.True(result >= previous - 0.0001m, $"non-monotonic at {price}: {result} < prev {previous}");
+            Assert.True(result >= Wide.Lower && result <= Wide.Upper, $"out of bounds at {price}: {result}");
+            Assert.True(cents == 0.49m || cents == 0.99m, $"not a …49/…99 ending at {price}: {result}");
+
+            previous = result;
+        }
+    }
+
     [Fact]
     public void None_NormalizesToTwoDecimals()
     {
@@ -299,7 +389,7 @@ public class RoundingTests
             RoundingConvention.EndsIn99, RoundingConvention.EndsIn95,
             RoundingConvention.WholeEuro, RoundingConvention.Charm995,
             RoundingConvention.EndsIn99Hundreds, RoundingConvention.EndsIn50,
-            RoundingConvention.Gj50Charm, RoundingConvention.None,
+            RoundingConvention.Gj50Charm, RoundingConvention.GjmCharm, RoundingConvention.None,
         };
         var prices = new[] { 3.10m, 9.99m, 47.31m, 99.50m, 250.77m, 999.99m, 1003.21m, 4321.99m };
 

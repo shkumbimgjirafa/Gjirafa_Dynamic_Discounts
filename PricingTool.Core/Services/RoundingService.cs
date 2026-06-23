@@ -29,6 +29,10 @@ public class RoundingService
         if (bounds.Upper <= bounds.Lower)
             return new RoundingOutcome(Normalize(price, bounds), false, false);
 
+        // GjirafaMall charm: round up to the next …99 if the Weber budget allows it, else nearest …49/…99.
+        if (convention == RoundingConvention.GjmCharm)
+            return ApplyGjmCharm(price, bounds, lowPriceThreshold, relativePrecision);
+
         var down = RoundDown(price, convention, lowPriceThreshold, relativePrecision);
         var up = RoundUp(price, convention, lowPriceThreshold, relativePrecision);
 
@@ -37,7 +41,7 @@ public class RoundingService
 
         // Gjirafa50 charm uses a round-up-biased selection (claw back margin) instead of nearest.
         if (convention == RoundingConvention.Gj50Charm)
-            return SelectCharmUpBiased(price, down, up, downOk, upOk, bounds, relativePrecision);
+            return SelectCharmUpBiased(price, down, up, downOk, upOk, bounds, relativePrecision, 0.5m);
 
         if (downOk && upOk)
         {
@@ -48,6 +52,56 @@ public class RoundingService
         if (downOk) return new RoundingOutcome(down, true, false);
         if (upOk) return new RoundingOutcome(up, true, false);
 
+        return new RoundingOutcome(Normalize(price, bounds), false, true);
+    }
+
+    /// <summary>
+    /// GjirafaMall charm — Power BI's …49 / …99 endings, but selected the platform way: <b>round up to the
+    /// next …99 when the Weber budget lets the price jump there</b> (clawing margin), otherwise snap to the
+    /// <b>nearest …49 / …99</b> half-euro point. So a price reaches the …99 if it can afford it (45.40 → 45.99,
+    /// since 0.59 ≤ k·price), drops to the …49 when it can't (10.40 → 10.49), and never overshoots a round
+    /// €100/€1000 (100 → 99.99, not 100.99). Below <paramref name="lowPriceThreshold"/> (€5) it snaps to the
+    /// nearest 10 cents. Everything is clamped to the guardrail bounds (floor / OldPrice cap).
+    /// </summary>
+    private static RoundingOutcome ApplyGjmCharm(decimal price, PriceBounds bounds, decimal lowPriceThreshold,
+        decimal relativePrecision)
+    {
+        if (price <= lowPriceThreshold)
+            return NearestOnGrid(price, 0.10m, 0.0m, bounds);   // nearest 10 cents
+
+        var budget = price * relativePrecision;
+        var euro = Math.Floor(price);
+
+        // Round-ten euro (50.xx, 120.xx, 100.xx, 1000.xx): pull DOWN across the ten to the …9.99 just below
+        // it (50.30 → 49.99, 120.88 → 119.99) — never round up to a …0.99. Applied when the pull is within
+        // the Weber budget and the floor; otherwise fall through to the nearest …49/…99 (cheap-euro case).
+        if (euro % 10m == 0m)
+        {
+            var below = euro - 0.01m;   // 49.99, 119.99, 99.99, 999.99
+            if (price - below <= budget && below >= bounds.Lower && below <= bounds.Upper)
+                return new RoundingOutcome(Normalize(below, bounds), true, false);
+            return NearestOnGrid(price, 0.50m, 0.49m, bounds);
+        }
+
+        // Otherwise round UP to this euro's …99 if the Weber budget reaches it (45.40 → 45.99); else the
+        // nearest …49/…99 (cheap items that can't afford the …99 jump land on the closer …49).
+        var up99 = euro + 0.99m;
+        if (up99 - price <= budget && up99 >= bounds.Lower && up99 <= bounds.Upper)
+            return new RoundingOutcome(Normalize(up99, bounds), true, false);
+
+        return NearestOnGrid(price, 0.50m, 0.49m, bounds);
+    }
+
+    /// <summary>Nearest lattice point of <c>n·step + offset</c> to <paramref name="price"/>, in bounds (tie → lower).</summary>
+    private static RoundingOutcome NearestOnGrid(decimal price, decimal step, decimal offset, PriceBounds bounds)
+    {
+        var down = SnapDown(price, step, offset);
+        var up = SnapUp(price, step, offset);
+        var downOk = down >= bounds.Lower && down <= bounds.Upper && down > 0;
+        var upOk = up >= bounds.Lower && up <= bounds.Upper;
+        if (downOk && upOk) return new RoundingOutcome(price - down <= up - price ? down : up, true, false);
+        if (downOk) return new RoundingOutcome(down, true, false);
+        if (upOk) return new RoundingOutcome(up, true, false);
         return new RoundingOutcome(Normalize(price, bounds), false, true);
     }
 
@@ -65,15 +119,20 @@ public class RoundingService
     ///
     /// If only one candidate is affordable, take it; if neither is, leave the price un-charmed
     /// (normalized). Rounding up can never breach the margin floor (the lower bound), so the floor is safe.
+    ///
+    /// <para><paramref name="charmGap"/> is the distance each charm point sits below its round number
+    /// (0.50 for <see cref="RoundingConvention.Gj50Charm"/>; 0.01/0.05/0.51/0.55 for
+    /// <see cref="RoundingConvention.GjmCharm"/>). It only feeds the salience checks — the candidates
+    /// themselves are already on the gap's grid.</para>
     /// </summary>
     private static RoundingOutcome SelectCharmUpBiased(decimal price, decimal down, decimal up,
-        bool downOk, bool upOk, PriceBounds bounds, decimal relativePrecision)
+        bool downOk, bool upOk, PriceBounds bounds, decimal relativePrecision, decimal charmGap)
     {
         // If the price sits exactly ON a charm point that is itself just ABOVE a salient round number
         // (e.g. 70.50 just over 70, 100.50 just over 100 — so down == up == price), shift the down
         // candidate to the charm point just BELOW that round number, so the anti-charm rule pulls the
         // price there (→ 69.50, 99.50) when the move stays within the Weber tolerance (it does for ≳ €50).
-        if (down == up && SitsJustAboveRoundNumber(price))
+        if (down == up && SitsJustAboveRoundNumber(price, charmGap))
         {
             down -= Gj50CharmStep(price, relativePrecision);
             downOk = down >= bounds.Lower && down <= bounds.Upper && down > 0;
@@ -87,7 +146,7 @@ public class RoundingService
         // the down charm point sits just below a salient round number (landing just *above* one is
         // anti-charm). So 100→99.50, 1000→999.50, 5000→4999.50, 199.80→199.50; 1233.23→1239.50 rounds up.
         if (upInTolerance && downInTolerance)
-            return new RoundingOutcome(SitsJustBelowRoundNumber(down, price) ? down : up, true, false);
+            return new RoundingOutcome(SitsJustBelowRoundNumber(down, price, charmGap) ? down : up, true, false);
         if (upInTolerance) return new RoundingOutcome(up, true, false);
         if (downInTolerance) return new RoundingOutcome(down, true, false);
 
@@ -113,21 +172,23 @@ public class RoundingService
     /// the grid's step transitions — e.g. it does <i>not</i> treat 1250 as salient, so 1250 rounds up
     /// like its neighbours instead of dropping below them.
     /// </summary>
-    private static bool SitsJustBelowRoundNumber(decimal candidate, decimal price)
+    private static bool SitsJustBelowRoundNumber(decimal candidate, decimal price, decimal charmGap)
     {
-        var modulus = LeadingMagnitude(price) / 2m;   // 5 (tens), 50 (hundreds), 500 (thousands)…
-        return (candidate + 0.5m) % modulus == 0m;    // candidate + 0.5 is the whole number it sits below
+        var modulus = LeadingMagnitude(price) / 2m;        // 5 (tens), 50 (hundreds), 500 (thousands)…
+        return (candidate + charmGap) % modulus == 0m;     // candidate + gap is the round number it sits below
     }
 
     /// <summary>
-    /// True if the price sits exactly 0.50 <i>above</i> a salient round number — i.e. it is itself a
-    /// charm point of the form R + 0.50 (70.50 over 70, 100.50 over 100). Such a price reads as just
-    /// over the round number, so it should be pulled to the charm point just below it instead.
+    /// True if the price sits exactly <paramref name="charmGap"/> <i>above</i> a salient round number —
+    /// i.e. it is itself a charm point of the form R + gap (70.50 over 70, 100.50 over 100 for gap 0.50).
+    /// Such a price reads as just over the round number, so it should be pulled to the charm point just
+    /// below it instead. (For the small GjmCharm gaps this is effectively inert — those points sit just
+    /// <i>below</i> round numbers, never above.)
     /// </summary>
-    private static bool SitsJustAboveRoundNumber(decimal price)
+    private static bool SitsJustAboveRoundNumber(decimal price, decimal charmGap)
     {
         var modulus = LeadingMagnitude(price) / 2m;
-        return (price - 0.5m) % modulus == 0m;        // price - 0.5 is a salient round number
+        return (price - charmGap) % modulus == 0m;         // price - gap is a salient round number
     }
 
     /// <summary>The place value of the leading digit: 10^floor(log10(price)). 47→10, 199→100, 1233→1000.</summary>

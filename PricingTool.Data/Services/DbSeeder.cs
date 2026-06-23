@@ -98,15 +98,21 @@ public static class DbSeeder
         {
             if (await db.PriceBands.AnyAsync(b => b.LayerId == layer.Id, ct)) continue;
 
-            // EUR layers use the Gj50Charm Weber-scaled charm grid (.50 endings) across all bands.
-            // Currencies with no minor unit (MKD, ALL) can't use the .50 ending — they round to
-            // whole-currency …99 instead.
+            // Rounding convention per layer:
+            //  - Non-EUR (MKD, ALL): whole-currency …99 — no minor unit for a fractional charm ending.
+            //  - GjirafaMall (EUR): GjmCharm — Weber grid with the k-selected .99/.95/.49/.45 ending,
+            //    nearest-10-cents below €5.
+            //  - Gjirafa50 (EUR): Gj50Charm — Weber grid with the .50 ending (the seed default).
             var nonEur = !string.Equals(layer.Currency, "EUR", StringComparison.OrdinalIgnoreCase);
+            var isGjirafaMall = string.Equals(layer.Brand, "GjirafaMall", StringComparison.OrdinalIgnoreCase);
 
             var sort = 0;
             foreach (var seed in BandSeeds)
             {
-                var rounding = nonEur ? RoundingConvention.EndsIn99Hundreds : seed.Rounding;
+                var rounding =
+                    nonEur ? RoundingConvention.EndsIn99Hundreds :
+                    isGjirafaMall ? RoundingConvention.GjmCharm :
+                    seed.Rounding;
                 var band = new PriceBand
                 {
                     LayerId = layer.Id,
