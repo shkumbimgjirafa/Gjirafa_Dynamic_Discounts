@@ -48,6 +48,36 @@
     </div>
 </div>
 
+<div class="card mb-4"><div class="card-body">
+    <h6>Pricing mode</h6>
+    @if (Model.FloorAndRoundingOnly)
+    {
+        <p class="mb-2">
+            <span class="badge bg-secondary">Algorithms OFF</span>
+            Runs change prices via the <strong>margin floor + rounding only</strong> — the demand/inventory
+            algorithms are skipped. Each SKU keeps its current price unless it falls below the floor or isn't on the rounding grid.
+        </p>
+    }
+    else
+    {
+        <p class="mb-2">
+            <span class="badge bg-success">Algorithms ON</span>
+            Runs use the full algorithm roster, then the margin floor and rounding.
+        </p>
+    }
+    @if (isManager)
+    {
+        <form method="post" asp-action="SetPricingMode">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="floorAndRoundingOnly" value="@((!Model.FloorAndRoundingOnly).ToString().ToLowerInvariant())" />
+            <button class="btn btn-sm @(Model.FloorAndRoundingOnly ? "btn-outline-success" : "btn-outline-secondary")"
+                    @(Model.RunInProgress ? "disabled" : "")>
+                @(Model.FloorAndRoundingOnly ? "Turn algorithms back on" : "Disable algorithms (floor + rounding only)")
+            </button>
+        </form>
+    }
+</div></div>
+
 <h5>Recent runs</h5>
 <table class="table table-sm table-hover">
     <thead class="table-light">

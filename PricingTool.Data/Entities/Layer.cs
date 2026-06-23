@@ -56,6 +56,14 @@ public class Layer
     /// <summary>True = exclude products not published in this store (UnpublishedStoreids NOT LIKE '%StoreId%').</summary>
     public bool ExcludeUnpublished { get; set; } = true;
 
+    /// <summary>
+    /// When true, the AI algorithms are switched off for this layer: a run skips every algorithm and
+    /// uses each SKU's current price as the baseline, so only the margin-floor clamp and psychological
+    /// rounding may change a price. Use it to run a layer on guardrails alone (no demand/inventory
+    /// repricing). Default false — the full algorithm roster runs.
+    /// </summary>
+    public bool FloorAndRoundingOnly { get; set; }
+
     // ---- Per-layer schedule (moved off the global ToolSettings) -------------------------------
 
     /// <summary>Daily run time in UTC, "HH:mm".</summary>

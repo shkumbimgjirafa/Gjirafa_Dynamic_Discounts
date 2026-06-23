@@ -79,7 +79,7 @@ public class OrchestratorTests
             .Options);
 
     /// <summary>Seeds a single active layer and returns its id (tests scope everything to it).</summary>
-    private static int SeedLayer(PricingToolDbContext db)
+    private static int SeedLayer(PricingToolDbContext db, bool floorAndRoundingOnly = false)
     {
         var layer = new Layer
         {
@@ -87,20 +87,22 @@ public class OrchestratorTests
             OperationalDatabase = "GjirafaMall", StoreId = 2, TranslationCountryId = 1, WarehouseStoreId = 2,
             Currency = "EUR", FilterVendors = true, ExcludeUnpublished = true,
             RunTimeUtc = "03:00", CadenceHours = 24, IsActive = true, SortOrder = 0,
+            FloorAndRoundingOnly = floorAndRoundingOnly,
         };
         db.Layers.Add(layer);
         db.SaveChanges();
         return layer.Id;
     }
 
-    private static void SeedBand(PricingToolDbContext db, int layerId, decimal min = 0, decimal max = 500)
+    private static void SeedBand(PricingToolDbContext db, int layerId, decimal min = 0, decimal max = 500,
+        int roundingConvention = 0, bool roundingEnabled = false)
     {
         var band = new PriceBand
         {
             LayerId = layerId,
             Name = "test", MinPrice = min, MaxPrice = max,
             MarginFloorPct = 10,
-            RoundingConvention = 0, RoundingEnabled = false, SortOrder = 0,
+            RoundingConvention = roundingConvention, RoundingEnabled = roundingEnabled, SortOrder = 0,
         };
         foreach (var (code, _, weight) in AlgorithmCodes.All)
             band.AlgorithmSettings.Add(new BandAlgorithmSetting { AlgorithmCode = code, Enabled = true, Weight = weight });
@@ -180,6 +182,28 @@ public class OrchestratorTests
 
         // Run start/finish audited.
         Assert.True(await db.AuditLog.CountAsync() >= 2);
+    }
+
+    [Fact]
+    public async Task Run_FloorAndRoundingOnlyLayer_SkipsAlgorithms_AppliesFloorAndRounding()
+    {
+        using var db = NewDb();
+        var layerId = SeedLayer(db, floorAndRoundingOnly: true);
+        SeedBand(db, layerId, roundingConvention: (int)RoundingConvention.EndsIn99, roundingEnabled: true);
+
+        // SKU sells well (Row sets Qty90=90) so the algorithms would normally move it — but the layer
+        // is in floor + rounding-only mode, so the only change is rounding the current price to .99.
+        var run = await NewOrchestrator(db, new List<SnapshotRow> { Row("SKU-A", 100m, 87.31m, 40m) })
+            .ExecuteRunAsync("test", isOnDemand: true, layerId);
+
+        Assert.Equal(RunStatus.Succeeded, run.Status);
+        var proposal = await db.ProposedPrices.Include(p => p.Votes).SingleAsync(p => p.Sku == "SKU-A");
+        Assert.Equal(ProposalStatus.Pending, proposal.Status);
+        Assert.Equal(86.99m, proposal.ProposedPriceValue);   // current 87.31 rounded down to .99
+        Assert.True(proposal.HasChange);
+        Assert.Null(proposal.RawWeightedPrice);              // no algorithm produced a price
+        Assert.Empty(proposal.Votes);                        // and none ran
+        Assert.Contains("ALGORITHMS_DISABLED", proposal.ReasonCodes);
     }
 
     [Fact]

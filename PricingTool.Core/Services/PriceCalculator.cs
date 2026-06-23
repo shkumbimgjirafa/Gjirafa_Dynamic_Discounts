@@ -40,6 +40,12 @@ public class PriceCalculator
             };
         }
 
+        // Floor + rounding-only mode (per-layer): algorithms are switched off. The baseline is the
+        // current price; only the margin-floor clamp and psychological rounding may move it.
+        if (ctx.FloorAndRoundingOnly)
+            return Finalize(ctx, ctx.CurrentPrice, rawWeighted: null,
+                votes: Array.Empty<WeightedVote>(), reasonCodes: new[] { GuardrailFlags.AlgorithmsDisabled });
+
         var votes = new List<(IPricingAlgorithm, AlgorithmVote)>();
         foreach (var algorithm in algorithms)
         {
@@ -67,7 +73,21 @@ public class PriceCalculator
             };
         }
 
-        var clamp = _guardrails.Clamp(ctx, scored.RawPrice.Value);
+        var reasonCodes = scored.Votes.Where(v => v.EffectiveWeight > 0)
+            .Select(v => v.ReasonCode).Distinct().ToList();
+        return Finalize(ctx, scored.RawPrice.Value, scored.RawPrice, scored.Votes, reasonCodes);
+    }
+
+    /// <summary>
+    /// Shared tail for any priced SKU: clamp the <paramref name="baseline"/> to the guardrail bounds
+    /// (margin floor / anchor cap / dead-stock tunnel), apply psychological rounding inside those
+    /// bounds, then build the decision. The baseline is the algorithms' weighted price on the normal
+    /// path, or the current price in floor + rounding-only mode.
+    /// </summary>
+    private PricingDecision Finalize(SkuContext ctx, decimal baseline, decimal? rawWeighted,
+        IReadOnlyList<WeightedVote> votes, IReadOnlyList<string> reasonCodes)
+    {
+        var clamp = _guardrails.Clamp(ctx, baseline);
         var bounds = _guardrails.GetBounds(ctx);
         var flags = new List<string>(clamp.Flags);
 
@@ -90,13 +110,13 @@ public class PriceCalculator
             AnchorPrice = ctx.AnchorPrice,
             OldPrice = ctx.OldPrice,
             CurrentPrice = ctx.CurrentPrice,
-            RawWeightedPrice = scored.RawPrice,
+            RawWeightedPrice = rawWeighted,
             ClampedPrice = clamp.Price,
             FinalPrice = final,
             Changed = Math.Abs(final - ctx.CurrentPrice) >= 0.01m,
-            Votes = scored.Votes,
+            Votes = votes,
             GuardrailFlagsApplied = flags,
-            ReasonCodes = scored.Votes.Where(v => v.EffectiveWeight > 0).Select(v => v.ReasonCode).Distinct().ToList(),
+            ReasonCodes = reasonCodes,
         };
     }
 }

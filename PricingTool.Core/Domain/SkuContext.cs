@@ -101,6 +101,12 @@ public class SkuContext
     /// <summary>Per-SKU override that disables psychological rounding even when the band enables it.</summary>
     public bool RoundingDisabledForSku { get; init; }
 
+    /// <summary>
+    /// When true (set from the layer), the algorithms are switched off: the pricing pipeline uses the
+    /// current price as its baseline and only the margin-floor clamp and rounding may change it.
+    /// </summary>
+    public bool FloorAndRoundingOnly { get; init; }
+
     // ---- Derived metrics -------------------------------------------------
 
     public int TotalStock => KsStock + SupplierStock;

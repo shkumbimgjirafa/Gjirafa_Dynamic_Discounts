@@ -32,6 +32,8 @@ public class ScheduleController : Controller
     {
         var layerId = await _layers.RequireCurrentIdAsync();
         var info = await _schedule.GetAsync(layerId);
+        var floorAndRoundingOnly = await _db.Layers.AsNoTracking()
+            .Where(l => l.Id == layerId).Select(l => l.FloorAndRoundingOnly).FirstOrDefaultAsync();
         // Ignore stale orphans (a run whose process was killed mid-run): they read as Running in the
         // DB but aren't executing, and the next trigger's stale-run cleanup will fail them out.
         // Computed as a local so EF parameterizes it (inline DateTime arithmetic can't be translated).
@@ -45,6 +47,7 @@ public class ScheduleController : Controller
             // Runs are serialized globally, so any (non-stale) run in progress blocks this layer's "Run now".
             RunInProgress = _launcher.IsRunning ||
                 await _db.PricingRuns.AnyAsync(r => r.Status == RunStatus.Running && r.StartedUtc >= staleCutoff),
+            FloorAndRoundingOnly = floorAndRoundingOnly,
             RecentRuns = await _db.PricingRuns.Where(r => r.LayerId == layerId).OrderByDescending(r => r.Id).Take(10).ToListAsync(),
         };
         return View(model);
@@ -79,6 +82,38 @@ public class ScheduleController : Controller
             layerId: layerId);
 
         TempData["Message"] = "Schedule saved. The worker picks it up within a minute.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    /// <summary>
+    /// Toggles the layer's pricing mode: algorithms on (full roster) vs floor + rounding only
+    /// (algorithms skipped — only the margin floor and rounding move prices). Takes effect on the
+    /// next run for this layer.
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "Manager")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetPricingMode(bool floorAndRoundingOnly)
+    {
+        var layerId = await _layers.RequireCurrentIdAsync();
+        var layer = await _db.Layers.FirstOrDefaultAsync(l => l.Id == layerId);
+        if (layer is null) return NotFound();
+
+        if (layer.FloorAndRoundingOnly != floorAndRoundingOnly)
+        {
+            var was = layer.FloorAndRoundingOnly;
+            layer.FloorAndRoundingOnly = floorAndRoundingOnly;
+            await _db.SaveChangesAsync();
+            await _audit.LogAsync(User.Identity?.Name ?? "unknown", AuditCategories.Config,
+                "Changed pricing mode", nameof(Layer), layerId.ToString(),
+                oldValue: was ? "floor + rounding only" : "algorithms on",
+                newValue: floorAndRoundingOnly ? "floor + rounding only" : "algorithms on",
+                layerId: layerId);
+        }
+
+        TempData["Message"] = floorAndRoundingOnly
+            ? "Pricing mode: algorithms OFF — the next run changes prices via the margin floor + rounding only."
+            : "Pricing mode: algorithms ON — the next run uses the full algorithm roster.";
         return RedirectToAction(nameof(Index));
     }
 

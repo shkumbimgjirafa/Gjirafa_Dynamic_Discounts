@@ -159,7 +159,7 @@ public class PricingRunOrchestrator
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var proposal = PriceOneSku(row, bands, streaks, elasticities, roundingDisabledSkus, pulledAt, layer.VatRatePct);
+                    var proposal = PriceOneSku(row, bands, streaks, elasticities, roundingDisabledSkus, pulledAt, layer.VatRatePct, layer.FloorAndRoundingOnly);
                     proposal.Id = nextProposalId++;
                     proposal.PricingRunId = run.Id;
                     proposal.LayerId = layerId;
@@ -235,7 +235,8 @@ public class PricingRunOrchestrator
         IReadOnlyDictionary<string, (decimal Coefficient, decimal StdErr)> elasticities,
         HashSet<string> roundingDisabledSkus,
         DateTime pulledAt,
-        decimal vatRatePct)
+        decimal vatRatePct,
+        bool floorAndRoundingOnly)
     {
         // Policy order: unusable price → missing cost → no band. Skipped rows are flagged, never priced.
         if (row.CurrentPrice is not decimal currentPrice || currentPrice <= 0)
@@ -293,6 +294,7 @@ public class PricingRunOrchestrator
             Options = _options,
             VatRatePct = vatRatePct,
             RoundingDisabledForSku = roundingDisabledSkus.Contains(row.Sku),
+            FloorAndRoundingOnly = floorAndRoundingOnly,
         };
 
         var decision = _calculator.Decide(ctx, _algorithms);

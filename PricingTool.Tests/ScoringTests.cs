@@ -184,4 +184,79 @@ public class PriceCalculatorTests
         Assert.Equal(new[] { "REASON_B", "REASON_A" }, decision.ReasonCodes);
         Assert.True(decision.Changed);
     }
+
+    // ---- Floor + rounding-only mode (algorithms disabled for the layer) ----------------------
+
+    [Fact]
+    public void Decide_FloorAndRoundingOnly_IgnoresAlgorithms_RoundsCurrentPrice()
+    {
+        // A confident vote for a deep markdown is present and enabled — but the mode skips it entirely.
+        // The current price (off-grid, above floor) is simply rounded; the vote never participates.
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 87.31m, pptcv: 40m, qty90: 12,
+            band: band, floorAndRoundingOnly: true);
+
+        var decision = NewCalculator().Decide(ctx,
+            new[] { new FakeAlgorithm("A", new AlgorithmVote(50m, 1m, "MARKDOWN", "")) });
+
+        Assert.Null(decision.RawWeightedPrice);          // no algorithm produced a price
+        Assert.Empty(decision.Votes);                    // and none participated
+        Assert.Equal(86.99m, decision.FinalPrice);       // current 87.31 rounded to the nearest .99 (down)
+        Assert.True(decision.Changed);
+        Assert.Contains(GuardrailFlags.AlgorithmsDisabled, decision.ReasonCodes);
+        Assert.DoesNotContain("MARKDOWN", decision.ReasonCodes);
+    }
+
+    [Fact]
+    public void Decide_FloorAndRoundingOnly_LiftsBelowFloorPrice_ToTheFloor()
+    {
+        // Supplier-only stock (no local dead-stock tunnel) priced below the 10% floor (40/0.9 = 44.44).
+        // The floor lifts it, then rounding lands on the nearest in-bounds .99.
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 30m, pptcv: 40m, ksStock: 0, qty90: 12,
+            band: band, floorAndRoundingOnly: true);
+
+        var decision = NewCalculator().Decide(ctx,
+            new[] { new FakeAlgorithm("A", new AlgorithmVote(25m, 1m, "MARKDOWN", "")) });
+
+        Assert.Null(decision.RawWeightedPrice);
+        Assert.Equal(44.99m, decision.FinalPrice);
+        Assert.True(decision.Changed);
+        Assert.Contains(GuardrailFlags.MarginFloorClamped, decision.GuardrailFlagsApplied);
+        Assert.Contains(GuardrailFlags.AlgorithmsDisabled, decision.ReasonCodes);
+        Assert.True(VatMath.MarginPct(decision.FinalPrice, 40m)!.Value >= 10m);
+    }
+
+    [Fact]
+    public void Decide_FloorAndRoundingOnly_OnGridAboveFloor_NoChange()
+    {
+        // Already on the .99 grid and above the floor → nothing moves it (rounding doesn't churn).
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 49.99m, pptcv: 40m, qty90: 12,
+            band: band, floorAndRoundingOnly: true);
+
+        var decision = NewCalculator().Decide(ctx,
+            new[] { new FakeAlgorithm("A", new AlgorithmVote(25m, 1m, "MARKDOWN", "")) });
+
+        Assert.Equal(49.99m, decision.FinalPrice);
+        Assert.False(decision.Changed);
+        Assert.Contains(GuardrailFlags.AlgorithmsDisabled, decision.ReasonCodes);
+    }
+
+    [Fact]
+    public void Decide_FloorAndRoundingOnly_StillHoldsNewProducts()
+    {
+        // New-product protection is a hard engine rule — it outranks floor + rounding-only too.
+        var band = BandWith(10, RoundingConvention.EndsIn99, true, ("A", true, 100));
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 77.77m, pptcv: 40m,
+            band: band, floorAndRoundingOnly: true, isNewProduct: true);
+
+        var decision = NewCalculator().Decide(ctx,
+            new[] { new FakeAlgorithm("A", new AlgorithmVote(25m, 1m, "MARKDOWN", "")) });
+
+        Assert.Equal(77.77m, decision.FinalPrice);       // held exactly, not rounded to 77.99
+        Assert.False(decision.Changed);
+        Assert.Contains(GuardrailFlags.NewProductProtected, decision.ReasonCodes);
+        Assert.DoesNotContain(GuardrailFlags.AlgorithmsDisabled, decision.ReasonCodes);
+    }
 }
