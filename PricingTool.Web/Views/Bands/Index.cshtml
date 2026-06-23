@@ -2,7 +2,7 @@
 @{
     ViewData["Title"] = "Price Bands";
     var cur = ViewData.CurrencyCode();
-    var conventionNames = new Dictionary<int, string> { [0] = "None", [1] = ".99 endings", [2] = ".95 endings", [3] = $"Whole {cur}", [4] = $"995-style (5 {cur} steps)" };
+    var conventionNames = new Dictionary<int, string> { [0] = "None", [1] = ".99 endings", [2] = ".95 endings", [3] = $"Whole {cur}", [4] = $"995-style (5 {cur} steps)", [5] = "…99 (whole-currency)", [6] = ".50 endings", [7] = "Gj50 charm (Weber .50)" };
 }
 
 <h1 class="h3">Price Bands</h1>

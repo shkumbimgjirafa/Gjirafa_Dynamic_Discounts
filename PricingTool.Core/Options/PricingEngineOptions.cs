@@ -28,6 +28,15 @@ public class PricingEngineOptions
     public decimal LowPriceRoundingThreshold { get; set; } = 5m;
 
     /// <summary>
+    /// Weber fraction for the <c>Gj50Charm</c> rounding convention (default 0.02 = 2%). Controls both
+    /// the charm grid granularity (step stays within this fraction of the price, so the snap is
+    /// magnitude-proportional with no hard cliffs) and the round-up tolerance (a price is only rounded
+    /// up to the higher charm point if the move is within this fraction). Lower = tighter to the
+    /// engine's optimal price; higher = coarser, more aggressive charm endings. See docs/Webers-Law-Pricing.md.
+    /// </summary>
+    public decimal CharmRelativePrecision { get; set; } = 0.02m;
+
+    /// <summary>
     /// Dead-stock "tunnel" floor as a fraction of unit cost (0.50 = 50% of cost — a negative margin).
     /// Locally-held stock with no sales in 90 days is the ONE case allowed to pierce the margin floor:
     /// its progressive markdown may run down to this fraction of cost to clear inventory we hold. Set to

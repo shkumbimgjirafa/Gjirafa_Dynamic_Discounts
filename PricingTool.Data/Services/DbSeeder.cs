@@ -39,17 +39,23 @@ public static class DbSeeder
         ("Gjirafa50",   "AL", "Gjirafa50 — Albania",           "GjirafaEcommerce", 3, 2, 3, 5, "ALL", false, 1, 19, 20m),
     };
 
-    /// <summary>Band seed defaults (currency-agnostic). Margin floors are conservative starting points.</summary>
+    /// <summary>
+    /// Band seed defaults (currency-agnostic). Margin floors are conservative starting points.
+    /// All EUR bands use <see cref="RoundingConvention.Gj50Charm"/> — the Weber-scaled charm grid is
+    /// magnitude-general (a single convention across every band), so the per-band .99/.95/whole/995
+    /// mix is no longer needed. Non-EUR layers (MKD/ALL) keep the whole-currency …99 override below,
+    /// since the .50 charm ending requires a minor unit those currencies don't have.
+    /// </summary>
     private static readonly (string Name, decimal Min, decimal Max, decimal MarginFloor, RoundingConvention Rounding)[] BandSeeds =
     {
-        ("0–10",        0m,    10m,     8m, RoundingConvention.EndsIn99),
-        ("10–50",       10m,   50m,    10m, RoundingConvention.EndsIn99),
-        ("50–100",      50m,   100m,   10m, RoundingConvention.EndsIn99),
-        ("100–250",     100m,  250m,   12m, RoundingConvention.EndsIn99),
-        ("250–500",     250m,  500m,   12m, RoundingConvention.WholeEuro),
-        ("500–750",     500m,  750m,   12m, RoundingConvention.WholeEuro),
-        ("750–1,000",   750m,  1000m,  12m, RoundingConvention.WholeEuro),
-        ("1,000+",      1000m, 999999m,15m, RoundingConvention.Charm995),
+        ("0–10",        0m,    10m,     8m, RoundingConvention.Gj50Charm),
+        ("10–50",       10m,   50m,    10m, RoundingConvention.Gj50Charm),
+        ("50–100",      50m,   100m,   10m, RoundingConvention.Gj50Charm),
+        ("100–250",     100m,  250m,   12m, RoundingConvention.Gj50Charm),
+        ("250–500",     250m,  500m,   12m, RoundingConvention.Gj50Charm),
+        ("500–750",     500m,  750m,   12m, RoundingConvention.Gj50Charm),
+        ("750–1,000",   750m,  1000m,  12m, RoundingConvention.Gj50Charm),
+        ("1,000+",      1000m, 999999m,15m, RoundingConvention.Gj50Charm),
     };
 
     public static async Task SeedCoreAsync(PricingToolDbContext db, PricingEngineOptions options, CancellationToken ct = default)
@@ -92,8 +98,9 @@ public static class DbSeeder
         {
             if (await db.PriceBands.AnyAsync(b => b.LayerId == layer.Id, ct)) continue;
 
-            // EUR layers use the per-band charm conventions (.99/.95/whole/995). Currencies with no
-            // minor unit (MKD, ALL) can't use those — they round to whole-currency …99 instead.
+            // EUR layers use the Gj50Charm Weber-scaled charm grid (.50 endings) across all bands.
+            // Currencies with no minor unit (MKD, ALL) can't use the .50 ending — they round to
+            // whole-currency …99 instead.
             var nonEur = !string.Equals(layer.Currency, "EUR", StringComparison.OrdinalIgnoreCase);
 
             var sort = 0;
