@@ -304,6 +304,29 @@ public class DeadStockTests
     }
 
     [Fact]
+    public void StartDiscount_IsPerBand()
+    {
+        // Same SKU, different bands: a 10% band starts at 90, a 5% band at 95 (the user's 0-10 vs 50-100 case).
+        var ctx10 = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            band: TestData.Band(deadStockStartDiscountPct: 10m));
+        Assert.Equal(90m, _algorithm.Evaluate(ctx10)!.SuggestedPrice);
+
+        var ctx5 = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            band: TestData.Band(deadStockStartDiscountPct: 5m));
+        Assert.Equal(95m, _algorithm.Evaluate(ctx5)!.SuggestedPrice);
+    }
+
+    [Fact]
+    public void StepAndPeriod_ArePerBand()
+    {
+        // Band: 20% start, +10pp every 7 days. At 7 streak days → 1 step → 30% off → 70.
+        var band = TestData.Band(deadStockStartDiscountPct: 20m, deadStockStepDiscountPct: 10m, deadStockPeriodDays: 7);
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 100m, ksStock: 10, qty90: 0,
+            zeroSaleStreakDays: 7, band: band);
+        Assert.Equal(70m, _algorithm.Evaluate(ctx)!.SuggestedPrice);
+    }
+
+    [Fact]
     public void AnySaleInNinetyDays_NoOpinion()
     {
         var ctx = TestData.Ctx(ksStock: 10, qty90: 1);

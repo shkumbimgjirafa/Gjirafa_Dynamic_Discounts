@@ -212,6 +212,21 @@ public class GuardrailTests
     }
 
     [Fact]
+    public void Clamp_LocalDeadStock_FloorIsPerBand()
+    {
+        // The dead-stock floor is per band: a 70%-of-cost floor stops the markdown at 0.70 × 50 = 35.00
+        // (vs the default 50% → 25.00 above).
+        var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 50m,
+            ksStock: 50, supplierStock: 0, qty90: 0,
+            band: TestData.Band(marginFloorPct: 20m, deadStockFloorCostPct: 70m));
+
+        var result = _guardrails.Clamp(ctx, 5m);
+
+        Assert.Equal(35.00m, result.Price);
+        Assert.Contains(GuardrailFlags.DeadStockFloorRelaxed, result.Flags);
+    }
+
+    [Fact]
     public void Clamp_LocalDeadStock_StartedSelling_HoldsTheBelowFloorPrice()
     {
         // It finally sold (qty90 > 0) at a below-floor tunnel price (40 < floor 73.75): hold it —

@@ -31,13 +31,17 @@ public class DeadStockMarkdownAlgorithm : IPricingAlgorithm
         // least DeadStockMinStockAgeDays old. Unknown age (no WMS check-in row) is treated as old enough.
         if (ctx.IsFreshlyStocked) return null;
 
+        // Start / step / period are per-band (ctx.Band) — admin-editable on the Bands screen.
         // ZeroSaleStreakDays counts SNAPSHOT ROWS, which equal calendar days only at the ~daily (24h)
-        // run cadence. "14" therefore means "two weeks" only at 24h; a slower cadence (e.g. 72h) would
-        // make each step span ~3× longer calendar time — convert to calendar days if the cadence changes.
-        var steps = ctx.ZeroSaleStreakDays / 14;
+        // run cadence. The period therefore means "N weeks" only at 24h; a slower cadence (e.g. 72h)
+        // makes each step span proportionally longer calendar time.
+        var periodDays = Math.Max(1, ctx.Band.DeadStockPeriodDays);
+        var steps = ctx.ZeroSaleStreakDays / periodDays;
+        var start = ctx.Band.DeadStockStartDiscountPct / 100m;
+        var step = ctx.Band.DeadStockStepDiscountPct / 100m;
         // No discount ceiling: deepen freely; PriceAtDiscount caps the fraction at 0.99 and the
         // margin-floor guardrail sets the real limit on how low the price can land.
-        var target = Math.Min(0.99m, 0.10m + 0.05m * steps);
+        var target = Math.Min(0.99m, start + step * steps);
 
         // Never vote to shrink an existing discount — this algorithm only marks down.
         target = Math.Max(target, ctx.CurrentDiscountFraction);

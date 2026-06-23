@@ -11,7 +11,11 @@ public static class TestData
         decimal marginFloorPct = 10m,
         RoundingConvention rounding = RoundingConvention.None,
         bool roundingEnabled = false,
-        Dictionary<string, BandAlgorithmConfig>? algorithms = null)
+        Dictionary<string, BandAlgorithmConfig>? algorithms = null,
+        decimal deadStockStartDiscountPct = 10m,
+        decimal deadStockStepDiscountPct = 5m,
+        int deadStockPeriodDays = 14,
+        decimal deadStockFloorCostPct = 50m)
     {
         algorithms ??= AlgorithmCodes.All.ToDictionary(
             a => a.Code, a => new BandAlgorithmConfig(true, a.DefaultWeight));
@@ -23,6 +27,10 @@ public static class TestData
             MinPrice = 0,
             MaxPrice = 999999,
             MarginFloorPct = marginFloorPct,
+            DeadStockStartDiscountPct = deadStockStartDiscountPct,
+            DeadStockStepDiscountPct = deadStockStepDiscountPct,
+            DeadStockPeriodDays = deadStockPeriodDays,
+            DeadStockFloorCostPct = deadStockFloorCostPct,
             Rounding = rounding,
             RoundingEnabled = roundingEnabled,
             Algorithms = algorithms,
@@ -49,7 +57,8 @@ public static class TestData
         decimal vatRatePct = 18m,
         bool isNewProduct = false,
         decimal? elasticityStdError = null,
-        int? oldestUnitAgeDays = null)
+        int? oldestUnitAgeDays = null,
+        bool floorAndRoundingOnly = false)
     {
         return new SkuContext
         {
@@ -75,6 +84,7 @@ public static class TestData
             IsNewProduct = isNewProduct,
             OldestUnitAgeDays = oldestUnitAgeDays,
             RoundingDisabledForSku = roundingDisabledForSku,
+            FloorAndRoundingOnly = floorAndRoundingOnly,
         };
     }
 }

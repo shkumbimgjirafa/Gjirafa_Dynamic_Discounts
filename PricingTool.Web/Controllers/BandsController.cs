@@ -59,6 +59,14 @@ public class BandsController : Controller
             ModelState.AddModelError(nameof(model.MaxPrice), "Max must be greater than min.");
         if (model.MarginFloorPct is < 0 or >= 100)
             ModelState.AddModelError(nameof(model.MarginFloorPct), "Margin floor must be in [0, 100).");
+        if (model.DeadStockStartDiscountPct is < 0 or >= 100)
+            ModelState.AddModelError(nameof(model.DeadStockStartDiscountPct), "Start discount must be in [0, 100).");
+        if (model.DeadStockStepDiscountPct is < 0 or >= 100)
+            ModelState.AddModelError(nameof(model.DeadStockStepDiscountPct), "Step discount must be in [0, 100).");
+        if (model.DeadStockPeriodDays < 1)
+            ModelState.AddModelError(nameof(model.DeadStockPeriodDays), "Period must be at least 1 day.");
+        if (model.DeadStockFloorCostPct is <= 0 or > 100)
+            ModelState.AddModelError(nameof(model.DeadStockFloorCostPct), "Dead-stock floor must be in (0, 100] % of cost.");
         foreach (var algorithm in model.Algorithms)
         {
             if (algorithm.Weight is < 0 or > 100)
@@ -72,6 +80,10 @@ public class BandsController : Controller
         band.MinPrice = model.MinPrice;
         band.MaxPrice = model.MaxPrice;
         band.MarginFloorPct = model.MarginFloorPct;
+        band.DeadStockStartDiscountPct = model.DeadStockStartDiscountPct;
+        band.DeadStockStepDiscountPct = model.DeadStockStepDiscountPct;
+        band.DeadStockPeriodDays = model.DeadStockPeriodDays;
+        band.DeadStockFloorCostPct = model.DeadStockFloorCostPct;
         band.RoundingConvention = model.RoundingConvention;
         band.RoundingEnabled = model.RoundingEnabled;
 
@@ -106,6 +118,10 @@ public class BandsController : Controller
             MinPrice = band.MinPrice,
             MaxPrice = band.MaxPrice,
             MarginFloorPct = band.MarginFloorPct,
+            DeadStockStartDiscountPct = band.DeadStockStartDiscountPct,
+            DeadStockStepDiscountPct = band.DeadStockStepDiscountPct,
+            DeadStockPeriodDays = band.DeadStockPeriodDays,
+            DeadStockFloorCostPct = band.DeadStockFloorCostPct,
             RoundingConvention = band.RoundingConvention,
             RoundingEnabled = band.RoundingEnabled,
             Algorithms = AlgorithmCodes.All.Select(a =>
@@ -128,6 +144,10 @@ public class BandsController : Controller
         band.MinPrice,
         band.MaxPrice,
         band.MarginFloorPct,
+        band.DeadStockStartDiscountPct,
+        band.DeadStockStepDiscountPct,
+        band.DeadStockPeriodDays,
+        band.DeadStockFloorCostPct,
         band.RoundingConvention,
         band.RoundingEnabled,
         Algorithms = band.AlgorithmSettings

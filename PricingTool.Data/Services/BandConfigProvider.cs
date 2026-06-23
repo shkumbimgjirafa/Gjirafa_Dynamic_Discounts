@@ -26,6 +26,10 @@ public class BandConfigProvider
             MinPrice = b.MinPrice,
             MaxPrice = b.MaxPrice,
             MarginFloorPct = b.MarginFloorPct,
+            DeadStockStartDiscountPct = b.DeadStockStartDiscountPct,
+            DeadStockStepDiscountPct = b.DeadStockStepDiscountPct,
+            DeadStockPeriodDays = b.DeadStockPeriodDays,
+            DeadStockFloorCostPct = b.DeadStockFloorCostPct,
             Rounding = (RoundingConvention)b.RoundingConvention,
             RoundingEnabled = b.RoundingEnabled,
             Algorithms = b.AlgorithmSettings.ToDictionary(

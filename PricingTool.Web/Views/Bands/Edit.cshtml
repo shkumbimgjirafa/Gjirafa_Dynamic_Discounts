@@ -35,6 +35,35 @@
             <small class="text-muted">hard min margin on net price</small>
         </div>
     </div>
+
+    <h5>Dead-stock markdown</h5>
+    <p class="text-muted small mb-2">Progressive markdown for locally-held stock with no 90-day sales (Algorithm 7), per band.</p>
+    <div class="row g-3 mb-4">
+        <div class="col-md-2">
+            <label class="form-label">Start discount %</label>
+            <input asp-for="DeadStockStartDiscountPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="DeadStockStartDiscountPct" class="text-danger"></span>
+            <small class="text-muted">first-step markdown</small>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Step discount %</label>
+            <input asp-for="DeadStockStepDiscountPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="DeadStockStepDiscountPct" class="text-danger"></span>
+            <small class="text-muted">added each period (pp)</small>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Period (days)</label>
+            <input asp-for="DeadStockPeriodDays" type="number" step="1" min="1" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="DeadStockPeriodDays" class="text-danger"></span>
+            <small class="text-muted">no-sale days per step</small>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Floor (% of cost)</label>
+            <input asp-for="DeadStockFloorCostPct" type="number" step="0.1" class="form-control" disabled="@fieldsDisabled" />
+            <span asp-validation-for="DeadStockFloorCostPct" class="text-danger"></span>
+            <small class="text-muted">may run below margin floor, down to this</small>
+        </div>
+    </div>
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <label class="form-label">Psychological rounding</label>

@@ -130,13 +130,13 @@ public class GuardrailService
             : 0m;
 
     /// <summary>
-    /// The dead-stock markdown floor: a fraction of the all-in unit cost (default 50%). The locally-held,
-    /// non-selling tunnel markdown may run down to this even though it breaches the margin floor.
-    /// (Pptcv is already VAT-inclusive, so this is directly a selling price.)
+    /// The dead-stock markdown floor: a percent of the all-in unit cost (per band, default 50%). The
+    /// locally-held, non-selling tunnel markdown may run down to this even though it breaches the margin
+    /// floor. (Pptcv is already VAT-inclusive, so this is directly a selling price.)
     /// </summary>
     private static decimal DeadStockFloor(SkuContext ctx) =>
         ctx.Pptcv.HasValue
-            ? ctx.Pptcv.Value * ctx.Options.DeadStockFloorCostFraction
+            ? ctx.Pptcv.Value * (ctx.Band.DeadStockFloorCostPct / 100m)
             : 0m;
 
     /// <summary>

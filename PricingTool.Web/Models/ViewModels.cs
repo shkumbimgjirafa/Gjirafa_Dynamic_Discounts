@@ -84,6 +84,13 @@ public class BandEditModel
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }
     public decimal MarginFloorPct { get; set; }
+
+    // Dead-stock progressive markdown (per band).
+    public decimal DeadStockStartDiscountPct { get; set; }
+    public decimal DeadStockStepDiscountPct { get; set; }
+    public int DeadStockPeriodDays { get; set; }
+    public decimal DeadStockFloorCostPct { get; set; }
+
     public int RoundingConvention { get; set; }
     public bool RoundingEnabled { get; set; }
     public List<BandAlgorithmEditModel> Algorithms { get; set; } = new();
@@ -106,6 +113,10 @@ public class ScheduleViewModel
     public DateTime? LastScheduledRunUtc { get; set; }
     public DateTime NextRunUtc { get; set; }
     public bool RunInProgress { get; set; }
+
+    /// <summary>When true, runs for this layer skip the algorithms — only the margin floor and rounding move prices.</summary>
+    public bool FloorAndRoundingOnly { get; set; }
+
     public List<PricingRun> RecentRuns { get; set; } = new();
 }
 
