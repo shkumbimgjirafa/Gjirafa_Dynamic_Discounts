@@ -90,7 +90,8 @@
         <label class="form-check-label" for="changedOnly">Changed only</label>
     </div>
     <div class="col-auto"><button class="btn btn-sm btn-primary">Apply</button></div>
-    <div class="col-auto text-muted"><small>@Model.TotalCount match · showing first @Model.Proposals.Count · @Model.ApprovedCount approved in run</small></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-success" formaction="@Url.Action("Export")" formmethod="get">Export CSV</button></div>
+    <div class="col-auto text-muted"><small>@Model.TotalCount match · showing first @Model.Proposals.Count · @Model.ApprovedCount approved in run · export is the full filtered set</small></div>
 </form>
 
 <form method="post" id="reviewForm">

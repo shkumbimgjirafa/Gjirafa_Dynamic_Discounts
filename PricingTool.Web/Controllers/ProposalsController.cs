@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -76,6 +78,72 @@ public class ProposalsController : Controller
         model.Proposals = await query.Take(500).ToListAsync();
         model.Kpis = await BuildWindowKpisAsync(model.Filter, layerId);
         return View(model);
+    }
+
+    /// <summary>
+    /// CSV export of the CURRENT filtered result set (the full set, not the 500-row screen cap). Streams
+    /// directly to the response so a large run doesn't buffer in memory. Read-only; carries the same
+    /// <see cref="ProposalsFilter"/> as the listing so the export matches what's on screen.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> Export([FromQuery] ProposalsFilter filter)
+    {
+        _db.Database.SetCommandTimeout(300);
+        var layerId = await _layers.RequireCurrentIdAsync();
+
+        var run = filter.RunId.HasValue
+            ? await _db.PricingRuns.FirstOrDefaultAsync(r => r.Id == filter.RunId.Value && r.LayerId == layerId)
+            : await _db.PricingRuns.Where(r => r.LayerId == layerId && r.Status != RunStatus.Running)
+                .OrderByDescending(r => r.Id).FirstOrDefaultAsync();
+        if (run is null)
+        {
+            TempData["Error"] = "No run to export.";
+            return RedirectToAction(nameof(Index), filter);
+        }
+        filter.RunId = run.Id;
+
+        var bandNames = await _db.PriceBands.Where(b => b.LayerId == layerId)
+            .ToDictionaryAsync(b => b.Id, b => b.Name);
+
+        var rows = BuildFilteredQuery(filter).OrderBy(p => p.Sku).Select(p => new
+        {
+            p.Sku, p.PriceBandId, p.OldPrice, p.CurrentPrice, p.AnchorPrice, p.Pptcv,
+            p.ProposedPriceValue, p.ChangePct, p.HasChange, p.Status,
+            p.ReasonCodes, p.GuardrailFlags, p.SkipReason, p.ReviewedBy,
+        }).AsNoTracking().AsAsyncEnumerable();
+
+        var fileName = $"proposals-run{run.Id}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv";
+        Response.Headers["Content-Disposition"] = $"attachment; filename=\"{fileName}\"";
+        Response.ContentType = "text/csv; charset=utf-8";
+
+        // UTF-8 BOM so Excel reads accented SKUs/names correctly.
+        await using var writer = new StreamWriter(Response.Body, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        await writer.WriteLineAsync("Sku,Band,OldPrice,CurrentPrice,AnchorPrice,Pptcv,ProposedPrice,ChangePct,HasChange,Status,ReasonCodes,GuardrailFlags,SkipReason,ReviewedBy");
+        await foreach (var p in rows)
+        {
+            var band = p.PriceBandId is int id && bandNames.TryGetValue(id, out var n) ? n : "";
+            await writer.WriteLineAsync(string.Join(",",
+                Csv(p.Sku), Csv(band), Num(p.OldPrice), Num(p.CurrentPrice), Num(p.AnchorPrice),
+                p.Pptcv.HasValue ? Num(p.Pptcv.Value) : "", Num(p.ProposedPriceValue),
+                p.ChangePct.ToString("0.##", CultureInfo.InvariantCulture), p.HasChange ? "1" : "0",
+                p.Status.ToString(), Csv(p.ReasonCodes), Csv(p.GuardrailFlags), Csv(p.SkipReason ?? ""), Csv(p.ReviewedBy ?? "")));
+        }
+        await writer.FlushAsync();
+        return new EmptyResult();
+    }
+
+    private static string Num(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
+
+    /// <summary>RFC-4180 CSV field: quote if it contains comma/quote/newline; double embedded quotes.
+    /// Also neutralises a leading =/+/-/@ so spreadsheets don't treat the cell as a formula.</summary>
+    private static string Csv(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        var s = value;
+        if (s.Length > 0 && (s[0] is '=' or '+' or '-' or '@')) s = "'" + s;
+        if (s.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0)
+            s = "\"" + s.Replace("\"", "\"\"") + "\"";
+        return s;
     }
 
     /// <summary>
