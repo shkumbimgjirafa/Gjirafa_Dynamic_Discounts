@@ -141,6 +141,12 @@ FROM (
     INNER JOIN #tier t ON t.ProductId = dap.Product_Id
     WHERE d.StoreId = @StoreId
       AND d.RequiresCouponCode = 0
+      -- Only customer-FACING catalog deals. DiscountApplyTypeId: 1 = customer-role / special-customer
+      -- discounts (VIP/Basic/Standard/Premium/Elite %), 0 = order-level / coupon / legacy / test promos —
+      -- neither is the price a normal shopper sees. 2 = the per-product campaign deal (the fixed promo
+      -- price; DiscountAmount IS the final price). Without this, a role discount like 'Elite-16%' leaks
+      -- in and understates CurrentPrice below the real public price.
+      AND d.DiscountApplyTypeId = 2
       AND @now BETWEEN ISNULL(d.StartDateUtc, '1900') AND ISNULL(d.EndDateUtc, '2999')
 ) x
 WHERE x.rn = 1;
