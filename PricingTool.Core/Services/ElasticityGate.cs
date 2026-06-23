@@ -12,15 +12,15 @@ namespace PricingTool.Core.Services;
 /// </summary>
 public static class ElasticityGate
 {
-    public const int MinObservations = 8;          // weekly buckets
-    public const int MinDistinctPricePoints = 4;
+    public const int MinObservations = 4;          // weekly buckets
+    public const int MinDistinctPricePoints = 3;
     public const decimal MinPriceRangeRatio = 1.05m; // max/min price ≥ 1.05 (≥5% spread)
     public const double MinR2 = 0.20;
     public const double MinMagnitude = 0.05;        // |E| must exceed this (reject near-zero/noise)
     public const double MaxMagnitude = 8.0;         // |E| must be below this (reject collinear artifacts)
 
-    /// <summary>z for the one-sided confidence that the true elasticity is below −1 (1.645 ≈ 95%).</summary>
-    public const double ElasticConfidenceZ = 1.645;
+    /// <summary>z for the one-sided confidence that the true elasticity is below −1 (1.2816 ≈ 90%).</summary>
+    public const double ElasticConfidenceZ = 1.2816;
 
     public static bool IsUsable(double slope, double r2, int observations, int distinctPricePoints, decimal priceRangeRatio) =>
         observations >= MinObservations

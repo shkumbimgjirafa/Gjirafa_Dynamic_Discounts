@@ -95,7 +95,7 @@ public class ElasticityGateTests
     public void PoorFitOrThinData_IsRejected()
     {
         Assert.False(ElasticityGate.IsUsable(-1.8, r2: 0.1, observations: 10, distinctPricePoints: 6, priceRangeRatio: 1.2m)); // R² too low
-        Assert.False(ElasticityGate.IsUsable(-1.8, r2: 0.6, observations: 5, distinctPricePoints: 6, priceRangeRatio: 1.2m));  // too few buckets
+        Assert.False(ElasticityGate.IsUsable(-1.8, r2: 0.6, observations: 3, distinctPricePoints: 6, priceRangeRatio: 1.2m));  // too few buckets
         Assert.False(ElasticityGate.IsUsable(-1.8, r2: 0.6, observations: 10, distinctPricePoints: 2, priceRangeRatio: 1.2m)); // too few prices
         Assert.False(ElasticityGate.IsUsable(-1.8, r2: 0.6, observations: 10, distinctPricePoints: 6, priceRangeRatio: 1.01m)); // no price spread
     }

@@ -155,7 +155,7 @@ public class ElasticityTests
     [Fact]
     public void NoisyNearUnitElastic_StaysSilent()
     {
-        // E = -1.18 but a wide SE → optimistic CI end (-1.18 + 1.645·0.4 = -0.52) isn't < -1, so we're
+        // E = -1.18 but a wide SE → optimistic CI end (-1.18 + 1.2816·0.4 = -0.67) isn't < -1, so we're
         // NOT confident it's elastic → silent (avoids the exploding 6× markup).
         var ctx = TestData.Ctx(currentPrice: 75m, pptcv: 40m, elasticity: -1.18m, elasticityStdError: 0.4m);
         Assert.Null(_algorithm.Evaluate(ctx));
@@ -172,7 +172,7 @@ public class ElasticityTests
     [Fact]
     public void ConfidentBarelyElastic_OptimalCappedAtAnchor()
     {
-        // E = -1.18 with a tight SE IS confident (-1.18 + 1.645·0.05 = -1.098 ≤ -1). Markup 6.56× cost
+        // E = -1.18 with a tight SE IS confident (-1.18 + 1.2816·0.05 = -1.12 ≤ -1). Markup 6.56× cost
         // = 262 would exceed everything, but it's capped at the anchor (100) — never above the reference.
         var ctx = TestData.Ctx(oldPrice: 100m, currentPrice: 80m, pptcv: 40m, elasticity: -1.18m, elasticityStdError: 0.05m);
         var vote = _algorithm.Evaluate(ctx);
